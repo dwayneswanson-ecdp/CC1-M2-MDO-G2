@@ -333,9 +333,20 @@
       studentLastNameInput.value = studentLastNameInput.value.toUpperCase();
     });
 
-    // Timer
-  let examDeadline = null; // timestamp (ms) when 40 minutes are over
+   // Timer + persistent deadline across reloads
+const DEADLINE_KEY = "examDeadline_M2MDOG2"; // change key per exam/page if needed
+let examDeadline = null; // timestamp (ms)
 let timer;
+
+// On load, try to restore an existing deadline (if exam was started before)
+const storedDeadline = localStorage.getItem(DEADLINE_KEY);
+if (storedDeadline) {
+  const parsed = parseInt(storedDeadline, 10);
+  if (!Number.isNaN(parsed)) {
+    examDeadline = parsed;
+    console.log("⏱ Restored existing examDeadline from storage:", new Date(examDeadline).toISOString());
+  }
+}
 
     // NEW: flag to avoid duplicate submissions
     let examSubmitted = false;
@@ -494,33 +505,21 @@ function terminateExam(message) {
     examActiveBefore: examActive
   });
 
-  // Stop the timer interval, but DO NOT touch examDeadline
+  // Stop the timer interval, but DO NOT touch examDeadline or localStorage
   clearInterval(timer);
 
-  // Flags: exam is no longer active, but submission allowed again later
+  // Flags: exam is no longer active, submission can be allowed again later
   examActive = false;
   examSubmitted = false;
 
-  alert(message || "Vous avez quitté l'écran de l'épreuve. Vous devez recommencer.");
+  alert(
+    message ||
+      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+  );
 
-  if (form) {
-    form.reset();
-  }
-
-  if (quill) {
-    quill.setText("");
-  }
-
-  if (exam)      exam.style.display = "none";
-  if (confirmSec) confirmSec.style.display = "none";
-  if (login)     login.style.display = "block";
-
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Envoyer l'épreuve";
-  }
-
-  console.log("✅ Exam terminated and reset to login screen.");
+  // 🔄 Now do a REAL reload of the page
+  // Because examDeadline is saved in localStorage, we will keep the same 40-minute window.
+  location.reload();
 }
     
     function randomizeSelectsKeepFirst() {
@@ -580,59 +579,63 @@ function randomizeQuestionOrder() {
     });
 
     // ----- Confirm page: begin exam -----
-    function beginExam() {
-      // Get latest values
-      const firstName = (studentFirstNameInput.value || "").trim();
-      const lastName  = (studentLastNameInput.value || "").trim().toUpperCase();
-      const email     = (studentEmailInput.value || "").trim();
-      const code      = (classCodeInput.value || "").trim();
+function beginExam() {
+  // Get latest values
+  const firstName = (studentFirstNameInput.value || "").trim();
+  const lastName  = (studentLastNameInput.value || "").trim().toUpperCase();
+  const email     = (studentEmailInput.value || "").trim();
+  const code      = (classCodeInput.value || "").trim();
 
-      const fullName = `${lastName} ${firstName}`;
+  const fullName = `${lastName} ${firstName}`;
 
-      // Copy confirmed inputs into hidden fields
-      document.getElementById("studentNameField").value  = fullName;
-      document.getElementById("studentEmailField").value = email;
-      document.getElementById("classCodeField").value    = code;
+  // Copy confirmed inputs into hidden fields
+  document.getElementById("studentNameField").value  = fullName;
+  document.getElementById("studentEmailField").value = email;
+  document.getElementById("classCodeField").value    = code;
 
-      // Show Part A
-      confirmSec.style.display = "none";
-      exam.style.display  = "block";
-      partA.classList.add("active");
-      partB.classList.remove("active");
+  // Show Part A
+  confirmSec.style.display = "none";
+  exam.style.display  = "block";
+  partA.classList.add("active");
+  partB.classList.remove("active");
 
-// Mark exam as active
-examActive = true;
-console.log("✅ Exam started – examActive =", examActive);
+  // Mark exam as active
+  examActive = true;
+  console.log("✅ Exam started – examActive =", examActive);
 
-// If this is the first time, set the deadline...
-if (!examDeadline) {
-  examDeadline = Date.now() + 40 * 60 * 1000;
+  // If this is the first time ever, set the deadline & persist it
+  if (!examDeadline) {
+    examDeadline = Date.now() + 40 * 60 * 1000;
+    localStorage.setItem(DEADLINE_KEY, String(examDeadline));
+    console.log("⏱ New examDeadline set:", new Date(examDeadline).toISOString());
+  } else {
+    console.log("⏱ Using existing examDeadline:", new Date(examDeadline).toISOString());
+  }
+
+  // If they try to start after the deadline, block it
+  if (Date.now() > examDeadline) {
+    alert(
+      "Le délai de 40 minutes est écoulé. Vous ne pouvez plus commencer ou reprendre l'épreuve."
+    );
+    examActive = false;
+    exam.style.display = "none";
+    login.style.display = "block";
+    return;
+  }
+
+  // 👉 Ignore blur/visibility for a very short startup window
+  isStartingExam = true;
+  setTimeout(() => {
+    isStartingExam = false;
+    console.log("⏱ Startup grace period over");
+  }, 1200);
+
+  // Anti-cheat & timer & shuffle
+  enableFullScreen();
+  startTimer();
+  randomizeQuestionOrder();
+  randomizeSelectsKeepFirst();
 }
-
-// If they try to start after the deadline, block it
-if (Date.now() > examDeadline) {
-  alert(
-    "Le délai de 40 minutes est écoulé. Vous ne pouvez plus commencer ou reprendre l'épreuve."
-  );
-  examActive = false;
-  exam.style.display = "none";
-  login.style.display = "block";
-  return;
-}
-
-// 👉 Ignore blur/visibility for a very short startup window
-isStartingExam = true;
-setTimeout(() => {
-  isStartingExam = false;
-  console.log("⏱ Startup grace period over");
-}, 1200);
-
-// Anti-cheat & timer & shuffle
-enableFullScreen();
-startTimer();
-randomizeQuestionOrder();
-randomizeSelectsKeepFirst();
-    }
 
     // ----- Confirm page buttons -----
     confirmBackBtn.addEventListener("click", () => {
@@ -801,9 +804,14 @@ if (examDeadline) {
       "Bb0oPYBiZGQcyIz5r" // public key again here
     )
     .then(() => {
-      alert("✅ Épreuve envoyée avec succès.");
-      exam.style.display = "none";
-    })
+  alert("✅ Épreuve envoyée avec succès.");
+  exam.style.display = "none";
+
+  // Clean deadline for future sessions
+  localStorage.removeItem(DEADLINE_KEY);
+  examDeadline = null;
+  examActive = false;
+})
     .catch((err) => {
       alert(
         "❌ Erreur lors de l'envoi de l'épreuve : " +
