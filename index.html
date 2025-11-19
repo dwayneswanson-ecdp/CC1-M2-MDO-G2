@@ -501,25 +501,20 @@ function terminateExam(message) {
   examActive = false;
   examSubmitted = false;
 
-  // Show the message (user clicks OK to continue)
   alert(message || "Vous avez quitté l'écran de l'épreuve. Vous devez recommencer.");
 
-  // 🔄 Clear all answers in the form (Part A + hidden fields)
   if (form) {
     form.reset();
   }
 
-  // 🧹 Clear the Quill editor content (Part B)
   if (quill) {
-    quill.setText(""); // fully blank
+    quill.setText("");
   }
 
-  // 🔁 Reset UI: ONLY the login card visible
   if (exam)      exam.style.display = "none";
   if (confirmSec) confirmSec.style.display = "none";
   if (login)     login.style.display = "block";
 
-  // Re-enable submit button if it was disabled
   if (submitBtn) {
     submitBtn.disabled = false;
     submitBtn.textContent = "Envoyer l'épreuve";
