@@ -268,32 +268,137 @@
     </section>
   </main>
 
-  <!-- JS at the end (load once) -->
 <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 
 <script>
-  document.addEventListener("DOMContentLoaded", function() {
-   if (window.emailjs) {
-  try {
-    emailjs.init({
-      publicKey: "Bb0oPYBiZGQcyIz5r",
-    });
-  } catch (e) {
-    console.error("EmailJS init error:", e);
-  }
-}
+  // ----- Global exam timer + Quill state -----
+  const DEADLINE_KEY = "examDeadline_M2MDOG2";
+  let examDeadline = null;   // timestamp in ms
+  let timer = null;          // interval id
+  let quill = null;          // Quill instance
 
-    // Elements
-    const login  = document.getElementById("login");
+  // Restore deadline ONLY if still valid
+  (function restoreDeadline() {
+    const stored = localStorage.getItem(DEADLINE_KEY);
+    if (!stored) return;
+    const parsed = parseInt(stored, 10);
+    if (!Number.isNaN(parsed) && parsed > Date.now()) {
+      examDeadline = parsed;
+      console.log("⏱ Restored valid examDeadline:", new Date(examDeadline).toISOString());
+    } else {
+      console.log("⏱ Stored examDeadline expired/invalid → clearing.");
+      localStorage.removeItem(DEADLINE_KEY);
+    }
+  })();
+
+  // Correct answers + word list (Part A)
+  const correctAnswers = {
+    q1: "A detailed financial plan that estimates how much money an organisation expects to earn and spend over a specific period.",
+    q2: "A prediction of future results (such as sales, costs, or profits) based on current data, trends, and assumptions.",
+    q3: "A measurable value that shows how effectively a company or team is achieving an important business objective.",
+    q4: "A company or person that provides goods or services to another company, usually as part of a commercial contract.",
+    q5: "The total number of employees working in an organisation, department, or team.",
+    q6: "The time between placing an order and receiving the product or service, including production and delivery.",
+    q7: "The stock of goods, materials, or products that a company holds for use in production or for sale to customers.",
+    q8: "The ongoing business expenses that are not directly linked to producing a specific product or service, such as rent, utilities, or administration.",
+    q9: "Doing business in a way that meets current needs without harming the environment, society, or future generations.",
+    q10: "A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage."
+  };
+
+  const wordNames = [
+    "Budget",
+    "Forecast",
+    "KPI (Key Performance Indicator)",
+    "Supplier",
+    "Headcount",
+    "Lead time",
+    "Inventory",
+    "Overhead",
+    "Sustainability",
+    "ROI (Return on Investment)"
+  ];
+
+  // Create Quill lazily (only when Part B is shown)
+  function ensureQuill() {
+    if (quill) return;
+
+    quill = new Quill("#editor", {
+      theme: "snow",
+      modules: {
+        toolbar: [
+          ["bold", "italic", "underline"],
+          [{ list: "ordered" }, { list: "bullet" }],
+          ["clean"]
+        ]
+      }
+    });
+
+    // Lock down copy/paste etc.
+    const root = quill.root;
+
+    root.addEventListener("contextmenu", e => e.preventDefault());
+    root.addEventListener("paste", e => e.preventDefault());
+    root.addEventListener("copy", e => e.preventDefault());
+    root.addEventListener("cut", e => e.preventDefault());
+    root.addEventListener("drop", e => e.preventDefault());
+    root.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && ["c", "v", "x", "a"].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  // Randomise options but keep first option as "-- Choose --"
+  function randomizeSelectsKeepFirst() {
+    document.querySelectorAll("#partA select").forEach(sel => {
+      const opts = Array.from(sel.options);
+      const first = opts.shift(); // "-- Choose --"
+      for (let i = opts.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [opts[i].text, opts[j].text] = [opts[j].text, opts[i].text];
+      }
+      sel.innerHTML = "";
+      sel.appendChild(first);
+      opts.forEach(o => sel.appendChild(o));
+      sel.selectedIndex = 0;
+    });
+  }
+
+  // Randomise question order in Part A
+  function randomizeQuestionOrder() {
+    const list = document.querySelector("#partA ol");
+    if (!list) return;
+    const items = Array.from(list.children);
+
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+
+    items.forEach(li => list.appendChild(li));
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    // EmailJS init
+    if (window.emailjs) {
+      try {
+        emailjs.init({ publicKey: "Bb0oPYBiZGQcyIz5r" });
+      } catch (e) {
+        console.error("EmailJS init error:", e);
+      }
+    }
+
+    // ----- DOM Elements -----
+    const login = document.getElementById("login");
     const confirmSec = document.getElementById("confirm");
-    const exam   = document.getElementById("exam");
+    const exam = document.getElementById("exam");
 
     const startBtn = document.getElementById("startBtn");
-    const confirmBackBtn  = document.getElementById("confirmBackBtn");
+    const confirmBackBtn = document.getElementById("confirmBackBtn");
     const confirmBeginBtn = document.getElementById("confirmBeginBtn");
 
-    const confirmName  = document.getElementById("confirmName");
+    const confirmName = document.getElementById("confirmName");
     const confirmEmail = document.getElementById("confirmEmail");
 
     const partA = document.getElementById("partA");
@@ -304,413 +409,246 @@
     const timerDisplay = document.getElementById("timer");
     const form = document.getElementById("examForm");
 
-    // NEW: name inputs
     const studentFirstNameInput = document.getElementById("studentFirstName");
-    const studentLastNameInput  = document.getElementById("studentLastName");
-    const studentEmailInput     = document.getElementById("studentEmail");
-    const classCodeInput        = document.getElementById("classCode");
+    const studentLastNameInput = document.getElementById("studentLastName");
+    const studentEmailInput = document.getElementById("studentEmail");
+    const classCodeInput = document.getElementById("classCode");
 
-    // NEW: submit button (for disabling on send)
     const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
 
-    function resetToLanding() {
-  console.log("🔄 resetToLanding called");
+    const studentNameField = document.getElementById("studentNameField");
+    const studentEmailField = document.getElementById("studentEmailField");
+    const classCodeField = document.getElementById("classCodeField");
 
-  // Stop timer if running
-  try {
-    clearInterval(timer);
-  } catch (e) {
-    console.error("Error clearing timer in resetToLanding:", e);
-  }
-
-  // Flags
-  examActive = false;
-  examSubmitted = false;
-  isStartingExam = false;
-
-  // Reset form (Part A + hidden fields)
-  if (form) {
-    form.reset();
-  }
-
-  // Clear Quill
-  if (quill) {
-    quill.setText("");
-  }
-
-  // Clear login inputs
-  if (studentFirstNameInput) studentFirstNameInput.value = "";
-  if (studentLastNameInput)  studentLastNameInput.value  = "";
-  if (studentEmailInput)     studentEmailInput.value     = "";
-  if (classCodeInput)        classCodeInput.value        = "";
-
-  // Force only login visible
-  if (login)      login.style.display      = "block";
-  if (confirmSec) confirmSec.style.display = "none";
-  if (exam)       exam.style.display       = "none";
-
-  // Re-enable submit button if needed
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Envoyer l'épreuve";
-  }
-
-  console.log("✅ Landing screen forced: login shown, confirm/exam hidden.");
-}
-    // Force a clean landing state on every load (overrides Safari's cached view)
-resetToLanding();
-
-    // Guard: if any required node missing, stop and log
+    // Guard: if any required node is missing, stop (prevents runtime chaos)
     const required = [
       login, confirmSec, exam, startBtn, confirmBackBtn, confirmBeginBtn,
       confirmName, confirmEmail, partA, partB, toPartA, toPartB,
-      timerDisplay, form, studentFirstNameInput, studentLastNameInput, studentEmailInput, classCodeInput
+      timerDisplay, form, studentFirstNameInput, studentLastNameInput,
+      studentEmailInput, classCodeInput
     ];
     if (required.some(n => !n)) {
-      console.error("Missing required DOM nodes. Check IDs.", {
-        login, confirmSec, exam, startBtn, confirmBackBtn, confirmBeginBtn,
-        confirmName, confirmEmail, partA, partB, toPartA, toPartB,
-        timerDisplay, form, studentFirstNameInput, studentLastNameInput, studentEmailInput, classCodeInput
-      });
+      console.error("Missing required DOM nodes. Check IDs.", { required });
       return;
     }
 
-    // Force LAST NAME to uppercase on input
+    // ----- State Flags -----
+    let examSubmitted = false;
+    let examActive = false;
+    let isStartingExam = false;
+
+    // ----- Helpers -----
+    function resetToLanding() {
+      console.log("🔄 resetToLanding called");
+
+      try {
+        clearInterval(timer);
+      } catch (e) {
+        console.error("Error clearing timer in resetToLanding:", e);
+      }
+
+      examActive = false;
+      examSubmitted = false;
+      isStartingExam = false;
+
+      if (form) form.reset();
+      if (quill) quill.setText("");
+
+      if (studentFirstNameInput) studentFirstNameInput.value = "";
+      if (studentLastNameInput) studentLastNameInput.value = "";
+      if (studentEmailInput) studentEmailInput.value = "";
+      if (classCodeInput) classCodeInput.value = "";
+
+      // UI: show only login
+      login.style.display = "block";
+      confirmSec.style.display = "none";
+      exam.style.display = "none";
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit Exam";
+      }
+
+      console.log("✅ Landing screen forced.");
+    }
+
+    function startTimer() {
+      clearInterval(timer);
+      timer = setInterval(() => {
+        if (!examDeadline) return;
+        const now = Date.now();
+        const remainingMs = examDeadline - now;
+        const totalSec = Math.max(0, Math.floor(remainingMs / 1000));
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        timerDisplay.textContent = `Time Remaining: ${m}:${s.toString().padStart(2, "0")}`;
+        if (remainingMs <= 0) {
+          clearInterval(timer);
+          submitExam(); // time is up
+        }
+      }, 1000);
+    }
+
+    function enableFullScreen() {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.warn("Fullscreen request failed:", err);
+        });
+      }
+    }
+
+    function terminateExam(message) {
+      console.log("💣 terminateExam called", {
+        message,
+        examActiveBefore: examActive
+      });
+
+      if (!examActive) {
+        console.log("terminateExam called but examActive is already false – ignoring.");
+        return;
+      }
+
+      alert(
+        message ||
+        "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+      );
+
+      resetToLanding();
+    }
+
+    // Force LAST NAME input uppercase
     studentLastNameInput.addEventListener("input", () => {
       studentLastNameInput.value = studentLastNameInput.value.toUpperCase();
     });
 
-  // Timer + persistent deadline across reloads
-const DEADLINE_KEY = "examDeadline_M2MDOG2"; // change key per exam/page if needed
-let examDeadline = null; // timestamp (ms)
-let timer;
-
-// On load, try to restore an existing deadline (if exam was started before)
-const storedDeadline = localStorage.getItem(DEADLINE_KEY);
-if (storedDeadline) {
-  const parsed = parseInt(storedDeadline, 10);
-  if (!Number.isNaN(parsed) && parsed > Date.now()) {
-    examDeadline = parsed;
-    console.log(
-      "⏱ Restored existing *valid* examDeadline from storage:",
-      new Date(examDeadline).toISOString()
-    );
-  } else {
-    console.log("⏱ Stored examDeadline is expired/invalid, clearing it.");
-    localStorage.removeItem(DEADLINE_KEY);
-  }
-}
-    
-    // NEW: flag to avoid duplicate submissions
-    let examSubmitted = false;
-
-    // Track whether the exam is currently active
-let examActive = false;
-
-    // Track whether we are in the brief "starting exam" phase
-let isStartingExam = false;
-
-// ESC key → terminate exam (especially important on Safari)
-document.addEventListener("keydown", (e) => {
-  if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
-    e.preventDefault();
-    terminateExam(
-      "Vous avez quitté le mode plein écran ou appuyé sur Échap. L'épreuve est terminée et doit être recommencée."
-    );
-  }
-});
-
-    // If the page becomes hidden (changed tab, changed desktop, other app on top)
-document.addEventListener("visibilitychange", () => {
-  if (isStartingExam) {
-    console.log("⏱ Ignoring visibilitychange during exam startup");
-    return;
-  }
-  if (examActive && document.hidden) {
-    terminateExam(
-      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
-    );
-  }
-});
-
-// If the window loses focus (clicked on another window/app)
-window.addEventListener("blur", () => {
-  if (isStartingExam) {
-    console.log("⏱ Ignoring blur during exam startup");
-    return;
-  }
-  if (examActive) {
-    terminateExam(
-      "Vous avez quitté la fenêtre de l'épreuve. L'épreuve est terminée et doit être recommencée."
-    );
-  }
-});
-
-document.addEventListener("fullscreenchange", () => {
-  console.log("📺 fullscreenchange fired", {
-    examActive,
-    fullscreenElement: !!document.fullscreenElement,
-    isStartingExam
-  });
-
-  // Ignore if exam not active or we’re in the tiny startup grace period
-  if (!examActive || isStartingExam) {
-    return;
-  }
-
-  // If we were in fullscreen and now we’re not → terminate
-  if (!document.fullscreenElement) {
-    console.log("⛔ Leaving fullscreen while examActive → terminateExam()");
-    terminateExam(
-      "Vous avez quitté le mode plein écran. L'épreuve est terminée et doit être recommencée."
-    );
-  }
-});
-    
-    // Correct answers + word list (auto-filled)
- const correctAnswers = {
-  q1: "A detailed financial plan that estimates how much money an organisation expects to earn and spend over a specific period.",
-  q2: "A prediction of future results (such as sales, costs, or profits) based on current data, trends, and assumptions.",
-  q3: "A measurable value that shows how effectively a company or team is achieving an important business objective.",
-  q4: "A company or person that provides goods or services to another company, usually as part of a commercial contract.",
-  q5: "The total number of employees working in an organisation, department, or team.",
-  q6: "The time between placing an order and receiving the product or service, including production and delivery.",
-  q7: "The stock of goods, materials, or products that a company holds for use in production or for sale to customers.",
-  q8: "The ongoing business expenses that are not directly linked to producing a specific product or service, such as rent, utilities, or administration.",
-  q9: "Doing business in a way that meets current needs without harming the environment, society, or future generations.",
-  q10: "A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage."
-};
-
-const wordNames = [
-  "Budget",
-  "Forecast",
-  "KPI (Key Performance Indicator)",
-  "Supplier",
-  "Headcount",
-  "Lead time",
-  "Inventory",
-  "Overhead",
-  "Sustainability",
-  "ROI (Return on Investment)"
-];
-
-// Lazy Quill
-let quill = null;
-function ensureQuill() {
-  if (!quill) {
-    quill = new Quill('#editor', {
-      theme: 'snow',
-      modules: {
-        toolbar: [
-          ['bold','italic','underline'],
-          [{ list: 'ordered' }, { list: 'bullet' }],
-          ['clean']
-        ]
+    // ----- Anti-cheat listeners -----
+    document.addEventListener("visibilitychange", () => {
+      if (isStartingExam) {
+        console.log("⏱ Ignoring visibilitychange during exam startup");
+        return;
+      }
+      if (examActive && document.hidden) {
+        terminateExam(
+          "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+        );
       }
     });
 
-    // 🔒 Disable ALL right-click + context menu inside editor
-    quill.root.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-    });
-
-    // 🔒 Disable paste
-    quill.root.addEventListener("paste", (e) => {
-      e.preventDefault();
-    });
-
-    // 🔒 Disable copy
-    quill.root.addEventListener("copy", (e) => {
-      e.preventDefault();
-    });
-
-    // 🔒 Disable cut
-    quill.root.addEventListener("cut", (e) => {
-      e.preventDefault();
-    });
-
-    // 🔒 Disable drag & drop text into editor
-    quill.root.addEventListener("drop", (e) => {
-      e.preventDefault();
-    });
-
-    // 🔒 Disable copy/paste/cut/select-all via keyboard (Mac + Windows)
-    quill.root.addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && ["c", "v", "x", "a"].includes(e.key.toLowerCase())) {
-        e.preventDefault();
+    window.addEventListener("blur", () => {
+      if (isStartingExam) {
+        console.log("⏱ Ignoring blur during exam startup");
+        return;
+      }
+      if (examActive) {
+        terminateExam(
+          "Vous avez quitté la fenêtre de l'épreuve. L'épreuve est terminée et doit être recommencée."
+        );
       }
     });
-  }
-}
-    
-   function startTimer() {
-  clearInterval(timer);
 
-  timer = setInterval(() => {
-    if (!examDeadline) return;
-
-    const now = Date.now();
-    const remainingMs = examDeadline - now;
-    const totalSec = Math.max(0, Math.floor(remainingMs / 1000));
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-
-    timerDisplay.textContent = `Time Remaining: ${m}:${s.toString().padStart(2, "0")}`;
-
-    if (remainingMs <= 0) {
-      clearInterval(timer);
-      // time is over → force submission (or termination if you prefer)
-      submitExam();
-    }
-  }, 1000);
-}
-
-function enableFullScreen() {
-  if (document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen().catch((err) => {
-      console.warn("Fullscreen request failed:", err);
-    });
-  }
-}
-
-function terminateExam(message) {
-  console.log("💣 terminateExam called", {
-    message,
-    examActiveBefore: examActive
-  });
-
-  // If already inactive, ignore stray calls
-  if (!examActive) {
-    console.log("terminateExam called but examActive is already false – ignoring.");
-    return;
-  }
-
-  // Show message first
-  alert(
-    message ||
-      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
-  );
-
-  // Then do the reset
-  resetToLanding();
-}
-    
-    function randomizeSelectsKeepFirst() {
-      document.querySelectorAll("#partA select").forEach(sel => {
-        const opts = Array.from(sel.options);
-        const first = opts.shift(); // remove first
-        for (let i = opts.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [opts[i].text, opts[j].text] = [opts[j].text, opts[i].text];
-        }
-        sel.innerHTML = "";
-        sel.appendChild(first);
-        opts.forEach(o => sel.appendChild(o));
-        sel.selectedIndex = 0;
+    document.addEventListener("fullscreenchange", () => {
+      console.log("📺 fullscreenchange fired", {
+        examActive,
+        fullscreenElement: !!document.fullscreenElement,
+        isStartingExam
       });
+
+      if (!examActive || isStartingExam) return;
+
+      if (!document.fullscreenElement) {
+        console.log("⛔ Leaving fullscreen while examActive → terminateExam()");
+        terminateExam(
+          "Vous avez quitté le mode plein écran. L'épreuve est terminée et doit être recommencée."
+        );
+      }
+    });
+
+    document.addEventListener("keydown", e => {
+      if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
+        e.preventDefault();
+        terminateExam(
+          "Vous avez quitté le mode plein écran ou appuyé sur Échap. L'épreuve est terminée et doit être recommencée."
+        );
+      }
+    });
+
+    // Start from a clean landing state (overrides Safari cached view)
+    resetToLanding();
+
+    // ----- Exam flow -----
+
+    function beginExam() {
+      const firstName = (studentFirstNameInput.value || "").trim();
+      const lastName = (studentLastNameInput.value || "").trim().toUpperCase();
+      const email = (studentEmailInput.value || "").trim();
+      const code = (classCodeInput.value || "").trim();
+
+      const fullName = `${lastName} ${firstName}`;
+
+      studentNameField.value = fullName;
+      studentEmailField.value = email;
+      classCodeField.value = code;
+
+      confirmSec.style.display = "none";
+      exam.style.display = "block";
+      partA.classList.add("active");
+      partB.classList.remove("active");
+
+      // Mark exam active
+      examActive = true;
+
+      // Set or reuse deadline
+      if (!examDeadline) {
+        examDeadline = Date.now() + 40 * 60 * 1000;
+        localStorage.setItem(DEADLINE_KEY, String(examDeadline));
+        console.log("⏱ New examDeadline set:", new Date(examDeadline).toISOString());
+      } else {
+        console.log("⏱ Using existing examDeadline:", new Date(examDeadline).toISOString());
+        if (Date.now() > examDeadline) {
+          alert("Le délai de 40 minutes est écoulé. Vous ne pouvez plus commencer l'épreuve.");
+          examActive = false;
+          exam.style.display = "none";
+          login.style.display = "block";
+          return;
+        }
+      }
+
+      isStartingExam = true;
+      setTimeout(() => {
+        isStartingExam = false;
+        console.log("⏱ Startup grace period over");
+      }, 1200);
+
+      enableFullScreen();
+      startTimer();
+      randomizeQuestionOrder();
+      randomizeSelectsKeepFirst();
     }
-function randomizeQuestionOrder() {
-  const list = document.querySelector("#partA ol");
-  if (!list) return;
 
-  const items = Array.from(list.children);
-
-  // Fisher–Yates shuffle
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
-  }
-
-  // Re-append items in randomized order
-  items.forEach(li => list.appendChild(li));
-}
-    
-    // ----- Start → Confirm -----
+    // Start → Confirm
     startBtn.addEventListener("click", () => {
       const firstName = (studentFirstNameInput.value || "").trim();
-      const lastName  = (studentLastNameInput.value || "").trim().toUpperCase();
-      const email     = (studentEmailInput.value || "").trim();
-      const code      = (classCodeInput.value || "").trim();
+      const lastName = (studentLastNameInput.value || "").trim().toUpperCase();
+      const email = (studentEmailInput.value || "").trim();
+      const code = (classCodeInput.value || "").trim();
 
       if (!firstName || !lastName || !email) {
         alert("Merci de remplir toutes les informations (nom, prénom et e-mail).");
         return;
       }
-      if (code !== "BLANK") {
+      if (code !== "BLANK") { // TODO: replace with real class code
         alert("Code de classe invalide.");
         return;
       }
 
       const fullName = `${lastName} ${firstName}`;
-
-      confirmName.textContent  = fullName;
+      confirmName.textContent = fullName;
       confirmEmail.textContent = email;
 
-      // Move to Confirm page
       login.style.display = "none";
       confirmSec.style.display = "block";
     });
 
-    // ----- Confirm page: begin exam -----
-function beginExam() {
-  // Get latest values
-  const firstName = (studentFirstNameInput.value || "").trim();
-  const lastName  = (studentLastNameInput.value || "").trim().toUpperCase();
-  const email     = (studentEmailInput.value || "").trim();
-  const code      = (classCodeInput.value || "").trim();
-
-  const fullName = `${lastName} ${firstName}`;
-
-  // Copy confirmed inputs into hidden fields
-  document.getElementById("studentNameField").value  = fullName;
-  document.getElementById("studentEmailField").value = email;
-  document.getElementById("classCodeField").value    = code;
-
-  // Show Part A
-  confirmSec.style.display = "none";
-  exam.style.display  = "block";
-  partA.classList.add("active");
-  partB.classList.remove("active");
-
-  // Mark exam as active
-  examActive = true;
-  console.log("✅ Exam started – examActive =", examActive);
-
-  // If this is the first time ever, set the deadline & persist it
-  if (!examDeadline) {
-    examDeadline = Date.now() + 40 * 60 * 1000;
-    localStorage.setItem(DEADLINE_KEY, String(examDeadline));
-    console.log("⏱ New examDeadline set:", new Date(examDeadline).toISOString());
-  } else {
-    console.log("⏱ Using existing examDeadline:", new Date(examDeadline).toISOString());
-  }
-
-  // If they try to start after the deadline, block it
-  if (Date.now() > examDeadline) {
-    alert(
-      "Le délai de 40 minutes est écoulé. Vous ne pouvez plus commencer ou reprendre l'épreuve."
-    );
-    examActive = false;
-    exam.style.display = "none";
-    login.style.display = "block";
-    return;
-  }
-
-  // 👉 Ignore blur/visibility for a very short startup window
-  isStartingExam = true;
-  setTimeout(() => {
-    isStartingExam = false;
-    console.log("⏱ Startup grace period over");
-  }, 1200);
-
-  // Anti-cheat & timer & shuffle
-  enableFullScreen();
-  startTimer();
-  randomizeQuestionOrder();
-  randomizeSelectsKeepFirst();
-}
-
-    // ----- Confirm page buttons -----
     confirmBackBtn.addEventListener("click", () => {
       confirmSec.style.display = "none";
       login.style.display = "block";
@@ -720,47 +658,45 @@ function beginExam() {
       beginExam();
     });
 
-    // ----- Navigation Part A <-> Part B -----
+    // Navigation Part A <-> Part B
     toPartB.addEventListener("click", () => {
       partA.classList.remove("active");
       partB.classList.add("active");
       ensureQuill();
     });
+
     toPartA.addEventListener("click", () => {
       partB.classList.remove("active");
       partA.classList.add("active");
     });
 
-    // ----- Submit -----
+    // Submit handler
     form.addEventListener("submit", e => {
       e.preventDefault();
       submitExam();
     });
 
     function submitExam() {
-      // NEW: avoid duplicate submissions (user click + timer, double click, etc.)
-      if (examSubmitted) {
-        return;
-      }
+      if (examSubmitted) return;
       examSubmitted = true;
 
       clearInterval(timer);
 
-      // Disable submit button and show "sending" state
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.textContent = "Envoi en cours…";
       }
 
       const fd = new FormData(form);
-      const name  = fd.get("studentName")  || document.getElementById("studentNameField").value;
-      const email = fd.get("studentEmail") || document.getElementById("studentEmailField").value;
+      const name = fd.get("studentName") || studentNameField.value;
+      const email = fd.get("studentEmail") || studentEmailField.value;
+
       let minutesUsed = 40;
-if (examDeadline) {
-  const remainingMs = examDeadline - Date.now();
-  const remainingMin = Math.max(0, Math.floor(remainingMs / 60000));
-  minutesUsed = 40 - remainingMin;
-}
+      if (examDeadline) {
+        const remainingMs = examDeadline - Date.now();
+        const remainingMin = Math.max(0, Math.floor(remainingMs / 60000));
+        minutesUsed = 40 - remainingMin;
+      }
 
       const emailHtml = quill ? quill.root.innerHTML.trim() : "<em>(No response)</em>";
       const totalQs = document.querySelectorAll('#partA select[name^="q"]').length || 10;
@@ -768,28 +704,28 @@ if (examDeadline) {
       let scoreA = 0;
       let partARowsHTML = "";
       for (let i = 1; i <= totalQs; i++) {
-        const sel  = fd.get("q" + i) || "No answer";
+        const sel = fd.get("q" + i) || "No answer";
         const corr = correctAnswers["q" + i] || "";
-        const ok   = sel === corr;
+        const ok = sel === corr;
         if (ok) scoreA++;
         const mark = ok ? "✅ Correct" : `❌ Incorrect → Correct answer: ${corr}`;
         partARowsHTML += `
           <tr>
-            <td style="padding:8px;border:1px solid #ccc;">${wordNames[i-1] || ("Q"+i)}</td>
+            <td style="padding:8px;border:1px solid #ccc;">${wordNames[i - 1] || ("Q" + i)}</td>
             <td style="padding:8px;border:1px solid #ccc;">${sel}</td>
-            <td style="padding:8px;border:1px solid #ccc;color:${ok ? 'green' : '#b00'};">${mark}</td>
+            <td style="padding:8px;border:1px solid #ccc;color:${ok ? "green" : "#b00"};">${mark}</td>
           </tr>`;
       }
 
       const partBScore = "___ / 10";
-      const finalNote  = "___ / 20";
+      const finalNote = "___ / 20";
 
       const htmlReport = `
         <h2 style="color:#004080;margin:0 0 8px 0;">Results – CC1 - English – ${name} (M2 MDO G2)</h2>
         <table style="border-collapse:collapse;width:100%;max-width:640px;font-size:14px;margin:0 0 12px 0;">
           <tr><td style="padding:4px 0;"><b>Student Name:</b> ${name}</td></tr>
           <tr><td style="padding:4px 0;"><b>Student Email:</b> ${email}</td></tr>
-          <tr><td style="padding:4px 0;"><b>Class Code:</b> M2MDOG2 </td></tr>
+          <tr><td style="padding:4px 0;"><b>Class Code:</b> M2MDOG2</td></tr>
           <tr><td style="padding:4px 0;"><b>Time Taken:</b> ${minutesUsed} min</td></tr>
         </table>
         <hr style="border:none;border-top:1px solid #ddd;margin:14px 0;">
@@ -861,50 +797,48 @@ if (examDeadline) {
         </div>
       `;
 
-      const subject = "(NAME) CC - English - M2 MDO G2".replace("(NAME)", name);
+      const subject = `(NAME) CC - English - M2 MDO G2`.replace("(NAME)", name);
 
-    if (window.emailjs) {
-  emailjs
-    .send(
-      "service_opm4h6b",
-      "template_r0u784p",
-      {
-        from_name: name,
-        from_email: email,
-        subject,
-        message_html: htmlReport,
-      },
-      "Bb0oPYBiZGQcyIz5r" // public key again here
-    )
-    .then(() => {
-  alert("✅ Épreuve envoyée avec succès.");
-  exam.style.display = "none";
-
-  // Clean deadline for future sessions
-  localStorage.removeItem(DEADLINE_KEY);
-  examDeadline = null;
-  examActive = false;
-})
-    .catch((err) => {
-      alert(
-        "❌ Erreur lors de l'envoi de l'épreuve : " +
-          (err && err.text ? err.text : err)
-      );
-      console.error("EmailJS Error:", err);
-      examSubmitted = false;
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Envoyer l'épreuve";
+      if (window.emailjs) {
+        emailjs
+          .send(
+            "service_opm4h6b",
+            "template_r0u784p",
+            {
+              from_name: name,
+              from_email: email,
+              subject,
+              message_html: htmlReport
+            },
+            "Bb0oPYBiZGQcyIz5r"
+          )
+          .then(() => {
+            alert("✅ Épreuve envoyée avec succès.");
+            // Clean deadline and reset state
+            localStorage.removeItem(DEADLINE_KEY);
+            examDeadline = null;
+            resetToLanding();
+          })
+          .catch(err => {
+            alert(
+              "❌ Erreur lors de l'envoi de l'épreuve : " +
+              (err && err.text ? err.text : err)
+            );
+            console.error("EmailJS Error:", err);
+            examSubmitted = false;
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = "Envoyer l'épreuve";
+            }
+          });
+      } else {
+        alert("EmailJS n'est pas chargé ; envoi simulé.");
+        examSubmitted = false;
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Envoyer l'épreuve";
+        }
       }
-    });
-} else {
-  alert("EmailJS n'est pas chargé ; envoi simulé.");
-  examSubmitted = false;
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Envoyer l'épreuve";
-  }
-}
     }
   });
 </script>
