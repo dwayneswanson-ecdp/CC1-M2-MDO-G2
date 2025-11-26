@@ -333,7 +333,7 @@
       studentLastNameInput.value = studentLastNameInput.value.toUpperCase();
     });
 
-   // Timer + persistent deadline across reloads
+  // Timer + persistent deadline across reloads
 const DEADLINE_KEY = "examDeadline_M2MDOG2"; // change key per exam/page if needed
 let examDeadline = null; // timestamp (ms)
 let timer;
@@ -342,9 +342,16 @@ let timer;
 const storedDeadline = localStorage.getItem(DEADLINE_KEY);
 if (storedDeadline) {
   const parsed = parseInt(storedDeadline, 10);
-  if (!Number.isNaN(parsed)) {
+  if (!Number.isNaN(parsed) && parsed > Date.now()) {
     examDeadline = parsed;
-    console.log("⏱ Restored existing examDeadline from storage:", new Date(examDeadline).toISOString());
+    console.log(
+      "⏱ Restored existing *valid* examDeadline from storage:",
+      new Date(examDeadline).toISOString()
+    );
+  } else {
+    // Deadline is invalid or already in the past → clear it so a fresh exam can start
+    console.log("⏱ Stored examDeadline is expired/invalid, clearing it.");
+    localStorage.removeItem(DEADLINE_KEY);
   }
 }
 
