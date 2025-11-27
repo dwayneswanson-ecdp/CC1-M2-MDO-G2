@@ -111,7 +111,7 @@
 
 
   <header>
-    <h1>CC1 - English — Resource Management (M2MDOG2)</h1>
+    <h1 id="examTitleHeader">CC1 - English — Resource Management (M2MDOG2)</h1>
     <div id="timer"></div>
   </header>
 
@@ -461,6 +461,10 @@ if (isSafari) {
     const login = document.getElementById("login");
     const confirmSec = document.getElementById("confirm");
     const exam = document.getElementById("exam");
+    const titleHeader = document.getElementById("examTitleHeader");
+if (titleHeader) {
+  titleHeader.textContent = EXAM_CONFIG.examTitle;
+}
 
     const startBtn = document.getElementById("startBtn");
     const confirmBackBtn = document.getElementById("confirmBackBtn");
@@ -704,10 +708,16 @@ if (isSafari) {
         alert("Merci de remplir toutes les informations (nom, prénom et e-mail).");
         return;
       }
-      if (code !== "BLANK") { // TODO: replace with real class code
-        alert("Code de classe invalide.");
-        return;
-      }
+     const isDebug = code === EXAM_CONFIG.debugCode;
+const isRealClass = code === EXAM_CONFIG.classCode;
+
+if (!isDebug && !isRealClass) {
+  alert("Code de classe invalide.");
+  return;
+}
+
+// (For now we just ignore isDebug,
+// but later we can use it to skip anti-cheat / fullscreen when you test)
 
       const fullName = `${lastName} ${firstName}`;
       confirmName.textContent = fullName;
@@ -789,11 +799,13 @@ if (examDeadline) {
       const finalNote = "___ / 20";
 
       const htmlReport = `
-        <h2 style="color:#004080;margin:0 0 8px 0;">Results – CC1 - English – ${name} (M2 MDO G2)</h2>
+       <h2 style="color:#004080;margin:0 0 8px 0;">
+  Results – ${EXAM_CONFIG.examTitle} – ${name}
+</h2>
         <table style="border-collapse:collapse;width:100%;max-width:640px;font-size:14px;margin:0 0 12px 0;">
           <tr><td style="padding:4px 0;"><b>Student Name:</b> ${name}</td></tr>
           <tr><td style="padding:4px 0;"><b>Student Email:</b> ${email}</td></tr>
-          <tr><td style="padding:4px 0;"><b>Class Code:</b> M2MDOG2</td></tr>
+          <tr><td style="padding:4px 0;"><b>Class Code:</b> ${EXAM_CONFIG.classLabel}</td></tr>
           <tr><td style="padding:4px 0;"><b>Time Taken:</b> ${minutesUsed} min</td></tr>
         </table>
         <hr style="border:none;border-top:1px solid #ddd;margin:14px 0;">
@@ -865,7 +877,7 @@ if (examDeadline) {
         </div>
       `;
 
-      const subject = `(NAME) CC - English - M2 MDO G2`.replace("(NAME)", name);
+      const subject = EXAM_CONFIG.emailSubjectTemplate.replace("(NAME)", name);
 
       if (window.emailjs) {
         emailjs
