@@ -343,8 +343,18 @@
       <label>Adresse e-mail :</label>
       <input type="email" id="studentEmail" required>
 
+            <label>Groupe :</label>
+      <select id="groupSelect" required>
+        <option value="">Sélectionner votre groupe</option>
+        <option value="M2 MDO G1">M2 MDO G1</option>
+        <option value="M2 MDO G2">M2 MDO G2</option>
+        <option value="M2 MDO G3">M2 MDO G3</option>
+      </select>
+      
       <label>Code de classe :</label>
       <input type="text" id="classCode" required>
+
+      
 
       <div class="btn-row center">
         <button id="startBtn" type="button">Commencer</button>
@@ -356,6 +366,7 @@
       <h2>Veuillez confirmer vos informations</h2>
       <p><b>Nom &amp; prénom :</b> <span id="confirmName"></span></p>
       <p><b>Email :</b> <span id="confirmEmail"></span></p>
+      <p><b>Groupe :</b> <span id="confirmGroup"></span></p>
       <p class="muted">
         Veuillez vérifier que ces informations sont correctes. Si quelque chose ne l’est pas, cliquez sur « Modifier » pour revenir à l’écran précédent.
       </p>
@@ -368,9 +379,10 @@
     <!-- EXAM -->
     <section id="exam">
       <form id="examForm">
-        <input type="hidden" name="studentName" id="studentNameField">
+              <input type="hidden" name="studentName" id="studentNameField">
         <input type="hidden" name="studentEmail" id="studentEmailField">
         <input type="hidden" name="classCode" id="classCodeField">
+        <input type="hidden" name="groupName" id="groupNameField">
 
         <!-- PART A -->
         <div id="partA" class="active">
@@ -627,32 +639,38 @@
   // ----- Global configuration for this exam -----
 const EXAM_CONFIG = {
   // Unique ID for this exam (used for localStorage keys etc.)
-  examId: "M2MDOG2_CC1_2025",
+  examId: "M2MD_CC1_2025",
 
-  // Class code students must enter
+  // Class code students must enter (shared for all groups)
   classCode: "T3L8Z",
 
   // Optional: special code that puts the exam in debug mode (future use)
   debugCode: "DEBUG",
 
-  // Display title for the exam
-  examTitle: "CC1 - English — Resource Management (M2 MDO G2)",
+  // Base title without group – we will append "(M2 MDO G1 / G2 / G3)" dynamically
+  examTitleBase: "CC1 - English — Resource Management",
+
+  // If you want, just for reference
+  allowedGroups: ["M2 MDO G1", "M2 MDO G2", "M2 MDO G3"],
 
   // Time limit in minutes
   timeLimitMinutes: 40,
 
   // Subject line template for the email you receive
-  // "(NAME)" will be replaced by the student's name
-  emailSubjectTemplate: "(NAME) CC1 - English - M2 MDO G2",
+  // "(NAME)" → student's name, "(GROUP)" → selected group
+  emailSubjectTemplate: "(NAME) CC1 - English - (GROUP)",
 
-  // Label used in the report (class / group name)
-  classLabel: "M2MDOG2"
+  // Label used in the report (we’ll override with the selected group)
+  classLabel: "M2MDOG" // fallback, not really used once groups are in place
 };
 // ----- Global exam timer + Quill state -----
 const DEADLINE_KEY = "examDeadline_" + EXAM_CONFIG.examId;
 let examDeadline = null;
 let timer = null;
-let quill = null;   // 👈 add this
+let quill = null;
+
+let selectedGroup = "";              // 👈 new
+let currentExamTitle = EXAM_CONFIG.examTitleBase; // 👈 new
 
   // Restore deadline ONLY if still valid
   (function restoreDeadline() {
@@ -811,13 +829,22 @@ if (isSafari) {
     }
 
     // ----- DOM Elements -----
-    const login = document.getElementById("login");
+       const login = document.getElementById("login");
     const confirmSec = document.getElementById("confirm");
     const exam = document.getElementById("exam");
     const titleHeader = document.getElementById("examTitleHeader");
-if (titleHeader) {
-  titleHeader.textContent = EXAM_CONFIG.examTitle;
-}
+
+    if (titleHeader) {
+      titleHeader.textContent = EXAM_CONFIG.examTitleBase; // base without group
+    }
+
+    const startBtn = document.getElementById("startBtn");
+    const confirmBackBtn = document.getElementById("confirmBackBtn");
+    const confirmBeginBtn = document.getElementById("confirmBeginBtn");
+
+    const confirmName = document.getElementById("confirmName");
+    const confirmEmail = document.getElementById("confirmEmail");
+    const confirmGroup = document.getElementById("confirmGroup"); // 👈 new
 
     const startBtn = document.getElementById("startBtn");
     const confirmBackBtn = document.getElementById("confirmBackBtn");
@@ -826,7 +853,7 @@ if (titleHeader) {
     const confirmName = document.getElementById("confirmName");
     const confirmEmail = document.getElementById("confirmEmail");
 
-    const partA = document.getElementById("partA");
+       const partA = document.getElementById("partA");
     const partB = document.getElementById("partB");
     const toPartA = document.getElementById("toPartA");
     const toPartB = document.getElementById("toPartB");
@@ -838,19 +865,21 @@ if (titleHeader) {
     const studentLastNameInput = document.getElementById("studentLastName");
     const studentEmailInput = document.getElementById("studentEmail");
     const classCodeInput = document.getElementById("classCode");
+    const groupSelect = document.getElementById("groupSelect");       // 👈 new
 
     const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
 
     const studentNameField = document.getElementById("studentNameField");
     const studentEmailField = document.getElementById("studentEmailField");
     const classCodeField = document.getElementById("classCodeField");
+    const groupNameField = document.getElementById("groupNameField"); // 👈 new
 
     // Guard: if any required node is missing, stop (prevents runtime chaos)
-    const required = [
+       const required = [
       login, confirmSec, exam, startBtn, confirmBackBtn, confirmBeginBtn,
-      confirmName, confirmEmail, partA, partB, toPartA, toPartB,
+      confirmName, confirmEmail, confirmGroup, partA, partB, toPartA, toPartB,
       timerDisplay, form, studentFirstNameInput, studentLastNameInput,
-      studentEmailInput, classCodeInput
+      studentEmailInput, classCodeInput, groupSelect
     ];
     if (required.some(n => !n)) {
       console.error("Missing required DOM nodes. Check IDs.", { required });
@@ -879,10 +908,17 @@ if (titleHeader) {
       if (form) form.reset();
       if (quill) quill.setText("");
 
-      if (studentFirstNameInput) studentFirstNameInput.value = "";
+            if (studentFirstNameInput) studentFirstNameInput.value = "";
       if (studentLastNameInput) studentLastNameInput.value = "";
       if (studentEmailInput) studentEmailInput.value = "";
       if (classCodeInput) classCodeInput.value = "";
+      if (groupSelect) groupSelect.value = "";       // 👈 new
+      selectedGroup = "";                            // 👈 new
+      currentExamTitle = EXAM_CONFIG.examTitleBase;  // 👈 new
+
+      if (titleHeader) {
+        titleHeader.textContent = currentExamTitle;  // 👈 make sure header resets
+      }
 
       // UI: show only login
       login.style.display = "block";
@@ -1002,25 +1038,35 @@ if (titleHeader) {
 
     // ----- Exam flow -----
 
-    function beginExam() {
+       function beginExam() {
       const firstName = (studentFirstNameInput.value || "").trim();
       const lastName = (studentLastNameInput.value || "").trim().toUpperCase();
       const email = (studentEmailInput.value || "").trim();
       const code = (classCodeInput.value || "").trim();
+      const group = selectedGroup || (groupSelect.value || "").trim(); // 👈
 
       const fullName = `${lastName} ${firstName}`;
 
       studentNameField.value = fullName;
       studentEmailField.value = email;
       classCodeField.value = code;
+      groupNameField.value = group; // 👈 make sure it’s in the form
 
       confirmSec.style.display = "none";
       exam.style.display = "block";
       partA.classList.add("active");
       partB.classList.remove("active");
 
+      // Update dynamic exam title with group
+      currentExamTitle = `${EXAM_CONFIG.examTitleBase} (${group})`; // 👈
+      if (titleHeader) {
+        titleHeader.textContent = currentExamTitle;
+      }
+
       // Mark exam active
       examActive = true;
+
+      // (rest of beginExam stays exactly as you have it…)
 
       // Set or reuse deadline
       if (!examDeadline) {
@@ -1051,30 +1097,37 @@ if (titleHeader) {
     }
 
     // Start → Confirm
-    startBtn.addEventListener("click", () => {
+        startBtn.addEventListener("click", () => {
       const firstName = (studentFirstNameInput.value || "").trim();
       const lastName = (studentLastNameInput.value || "").trim().toUpperCase();
       const email = (studentEmailInput.value || "").trim();
       const code = (classCodeInput.value || "").trim();
+      const group = (groupSelect.value || "").trim();
 
       if (!firstName || !lastName || !email) {
         alert("Merci de remplir toutes les informations (nom, prénom et e-mail).");
         return;
       }
-     const isDebug = code === EXAM_CONFIG.debugCode;
-const isRealClass = code === EXAM_CONFIG.classCode;
 
-if (!isDebug && !isRealClass) {
-  alert("Code de classe invalide.");
-  return;
-}
+      if (!group) {
+        alert("Merci de sélectionner votre groupe.");
+        return;
+      }
 
-// (For now we just ignore isDebug,
-// but later we can use it to skip anti-cheat / fullscreen when you test)
+      const isDebug = code === EXAM_CONFIG.debugCode;
+      const isRealClass = code === EXAM_CONFIG.classCode;
+
+      if (!isDebug && !isRealClass) {
+        alert("Code de classe invalide.");
+        return;
+      }
 
       const fullName = `${lastName} ${firstName}`;
+      selectedGroup = group;                 // 👈 store globally
+
       confirmName.textContent = fullName;
       confirmEmail.textContent = email;
+      confirmGroup.textContent = group;      // 👈 show on confirm
 
       login.style.display = "none";
       confirmSec.style.display = "block";
@@ -1151,14 +1204,16 @@ if (examDeadline) {
       const partBScore = "___ / 10";
       const finalNote = "___ / 20";
 
+           const group = selectedGroup || groupNameField.value || EXAM_CONFIG.classLabel;
+
       const htmlReport = `
        <h2 style="color:#004080;margin:0 0 8px 0;">
-  Results – ${EXAM_CONFIG.examTitle} – ${name}
+  Results – ${currentExamTitle} – ${name}
 </h2>
         <table style="border-collapse:collapse;width:100%;max-width:640px;font-size:14px;margin:0 0 12px 0;">
           <tr><td style="padding:4px 0;"><b>Student Name:</b> ${name}</td></tr>
           <tr><td style="padding:4px 0;"><b>Student Email:</b> ${email}</td></tr>
-          <tr><td style="padding:4px 0;"><b>Class Code:</b> ${EXAM_CONFIG.classLabel}</td></tr>
+          <tr><td style="padding:4px 0;"><b>Group:</b> ${group}</td></tr>
           <tr><td style="padding:4px 0;"><b>Time Taken:</b> ${minutesUsed} min</td></tr>
         </table>
         <hr style="border:none;border-top:1px solid #ddd;margin:14px 0;">
@@ -1230,7 +1285,11 @@ if (examDeadline) {
         </div>
       `;
 
-      const subject = EXAM_CONFIG.emailSubjectTemplate.replace("(NAME)", name);
+            const group = selectedGroup || groupNameField.value || EXAM_CONFIG.classLabel;
+
+      const subject = EXAM_CONFIG.emailSubjectTemplate
+        .replace("(NAME)", name)
+        .replace("(GROUP)", group);
 
       if (window.emailjs) {
         emailjs
