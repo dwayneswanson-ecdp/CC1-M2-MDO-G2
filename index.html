@@ -328,7 +328,7 @@
         <!-- LOGIN -->
     <section id="login" class="card">
       <h2>Commencer l'épreuve</h2>
-      <p>Merci de renseigner vos informations pour commencer. Une fois l’épreuve lancée, vous disposerez de <b>40 minutes</b> pour la compléter.</p>
+      <p>Merci de renseigner vos informations pour commencer. Une fois l’épreuve lancée, vous disposerez de <b>60 minutes</b> pour la compléter.</p>
 
       <label>Nom et prénom :</label>
       <div class="name-row">
@@ -642,7 +642,7 @@ const EXAM_CONFIG = {
   examId: "M2MD_CC1_2025",
 
   // Class code students must enter (shared for all groups)
-  classCode: "BLANK",
+  classCode: "Q4M7Z",
 
   // Optional: special code that puts the exam in debug mode (future use)
   debugCode: "DEBUG",
@@ -1115,7 +1115,7 @@ document.addEventListener("DOMContentLoaded", function() {
     } else {
       console.log("⏱ Using existing examDeadline:", new Date(examDeadline).toISOString());
       if (Date.now() > examDeadline) {
-        alert("Le délai de 40 minutes est écoulé. Vous ne pouvez plus commencer l'épreuve.");
+        alert("Le délai de 60 minutes est écoulé. Vous ne pouvez plus commencer l'épreuve.");
         examActive = false;
         exam.style.display = "none";
         login.style.display = "block";
