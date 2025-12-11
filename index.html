@@ -668,6 +668,12 @@ const DEADLINE_KEY = "examDeadline_" + EXAM_CONFIG.examId;
 let examDeadline = null;
 let timer = null;
 let quill = null;
+ 
+  let safeBlurUntil = 0;
+
+function armSafeBlur(ms = 1200) {
+  safeBlurUntil = Date.now() + ms;
+}
 
 let selectedGroup = "";              // 👈 new
 let currentExamTitle = EXAM_CONFIG.examTitleBase; // 👈 new
@@ -730,6 +736,14 @@ let currentExamTitle = EXAM_CONFIG.examTitleBase; // 👈 new
 
     // Lock down copy/paste etc.
     const root = quill.root;
+        // ---------------------------------------------------------
+    // 4b — SAFE BLUR ARMING FOR QUILL EDITOR (iPhone keyboard)
+    // ---------------------------------------------------------
+    ["focus", "click", "keydown"].forEach(evt => {
+      root.addEventListener(evt, () => {
+        if (isMobile) armSafeBlur(1500);
+      });
+    });
 
     root.addEventListener("contextmenu", e => e.preventDefault());
     root.addEventListener("paste", e => e.preventDefault());
@@ -774,6 +788,13 @@ let currentExamTitle = EXAM_CONFIG.examTitleBase; // 👈 new
   }
 
   document.addEventListener("DOMContentLoaded", function() {
+      const ua = navigator.userAgent;
+
+  const isIOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  const isMobile = /Mobi|Android/i.test(ua) || isIOS;
 
   // 🔹 Détecter Safari (desktop & iOS) – bloquer l'épreuve sur ce navigateur
 const ua = navigator.userAgent;
@@ -861,6 +882,17 @@ if (isSafari) {
     const classCodeInput = document.getElementById("classCode");
     const groupSelect = document.getElementById("groupSelect");       // 👈 new
 
+        // ---------------------------------------------------------
+    // 4a — SAFE BLUR ARMING FOR PART A DROPDOWNS (iPad issue)
+    // ---------------------------------------------------------
+    document.querySelectorAll("#partA select").forEach(sel => {
+      sel.addEventListener("mousedown", () => {
+        if (isMobile) armSafeBlur(1500);
+      });
+      sel.addEventListener("touchstart", () => {
+        if (isMobile) armSafeBlur(2000);
+      });
+    });
     const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
 
     const studentNameField = document.getElementById("studentNameField");
@@ -989,16 +1021,28 @@ if (isSafari) {
       }
     });
 
-    window.addEventListener("blur", () => {
+       window.addEventListener("blur", () => {
       if (isStartingExam) {
         console.log("⏱ Ignoring blur during exam startup");
         return;
       }
-      if (examActive) {
-        terminateExam(
-          "Vous avez quitté la fenêtre de l'épreuve. L'épreuve est terminée et doit être recommencée."
-        );
+
+      if (!examActive) return;
+
+      // 📱 On mobile (iPhone/iPad/Android), ignore blur that happens
+      // right after we interacted with a select or the editor.
+      if (isMobile && Date.now() < safeBlurUntil) {
+        console.log("📱 Blur ignored (inside safe window)", {
+          now: Date.now(),
+          safeBlurUntil
+        });
+        return;
       }
+
+      // Desktop or blur outside safe window → terminate
+      terminateExam(
+        "Vous avez quitté la fenêtre de l'épreuve. L'épreuve est terminée et doit être recommencée."
+      );
     });
 
     document.addEventListener("fullscreenchange", () => {
