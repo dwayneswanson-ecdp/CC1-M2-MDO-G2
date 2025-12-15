@@ -632,6 +632,61 @@
     </section>
   </main>
 
+<!-- Exit warning overlay -->
+<div id="exitOverlay" style="
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(15,23,42,0.55);
+  z-index:2000;
+  align-items:center;
+  justify-content:center;
+">
+  <div style="
+    background:#ffffff;
+    max-width:420px;
+    width:90%;
+    border-radius:16px;
+    padding:20px 22px 18px;
+    box-shadow:0 18px 45px rgba(15,23,42,0.25);
+    font-family:system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  ">
+    <h2 style="margin:0 0 8px 0; font-size:1rem; color:#111827;">
+      Quitter l’épreuve ?
+    </h2>
+    <p id="exitOverlayMessage" style="margin:0 0 16px 0; font-size:0.9rem; color:#4b5563;">
+      Vous êtes sur le point de quitter l’écran de l’épreuve.
+      Si vous continuez, votre épreuve sera effacée.
+    </p>
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:8px;">
+      <button type="button" id="exitOverlayStay" style="
+        padding:8px 16px;
+        border-radius:999px;
+        border:1px solid #c7d2fe;
+        background:#eef2ff;
+        color:#2643e9;
+        font-size:0.9rem;
+        font-weight:600;
+        cursor:pointer;
+      ">
+        Rester dans l’épreuve
+      </button>
+      <button type="button" id="exitOverlayLeave" style="
+        padding:8px 16px;
+        border-radius:999px;
+        border:none;
+        background:#b91c1c;
+        color:#fff;
+        font-size:0.9rem;
+        font-weight:600;
+        cursor:pointer;
+      ">
+        Quitter et effacer
+      </button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 
@@ -639,8 +694,8 @@
   // ----- Global configuration for this exam -----
   const EXAM_CONFIG = {
     examId: "M2MD_CC1_2025",
-    classCode: "BLANK",        // real code
-    debugCode: "DEBUG",        // debug code
+    classCode: "BLANK",        // <-- put real code here before exam
+    debugCode: "DEBUG",
     examTitleBase: "CC1 - English — Resource Management",
     allowedGroups: ["M2 MDO G1", "M2 MDO G2", "M2 MDO G3"],
     timeLimitMinutes: 60,
@@ -648,17 +703,13 @@
     classLabel: "M2MDOG"
   };
 
-  // ----- Global state -----
   const DEADLINE_KEY = "examDeadline_" + EXAM_CONFIG.examId;
   let examDeadline = null;
   let timer = null;
   let quill = null;
-
-  // device flags (filled inside DOMContentLoaded)
-  let isIOS = false;
-  let isMobile = false;
-
+  let isMobile = false;       // set inside DOMContentLoaded
   let safeBlurUntil = 0;
+
   let selectedGroup = "";
   let currentExamTitle = EXAM_CONFIG.examTitleBase;
 
@@ -707,7 +758,7 @@
     "ROI (Return on Investment)"
   ];
 
-  // Quill initialisation (lazy)
+  // Create Quill lazily (only when Part B is shown)
   function ensureQuill() {
     if (quill) return;
 
@@ -724,14 +775,14 @@
 
     const root = quill.root;
 
-    // Safe blur (for iOS keyboard)
+    // Arm safe blur when typing/tapping in editor (for iOS mobile blur bug)
     ["focus", "click", "keydown"].forEach(evt => {
       root.addEventListener(evt, () => {
         if (isMobile) armSafeBlur(1500);
       });
     });
 
-    // Anti copy/paste
+    // Lock down copy/paste etc.
     root.addEventListener("contextmenu", e => e.preventDefault());
     root.addEventListener("paste", e => e.preventDefault());
     root.addEventListener("copy", e => e.preventDefault());
@@ -744,11 +795,11 @@
     });
   }
 
-  // Randomise options but keep first option as placeholder
+  // Randomise options but keep first option as "Select a definition"
   function randomizeSelectsKeepFirst() {
     document.querySelectorAll("#partA select").forEach(sel => {
       const opts = Array.from(sel.options);
-      const first = opts.shift();
+      const first = opts.shift(); // first option = placeholder
       for (let i = opts.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [opts[i].text, opts[j].text] = [opts[j].text, opts[i].text];
@@ -765,26 +816,27 @@
     const list = document.querySelector("#partA ol");
     if (!list) return;
     const items = Array.from(list.children);
+
     for (let i = items.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [items[i], items[j]] = [items[j], items[i]];
     }
+
     items.forEach(li => list.appendChild(li));
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  document.addEventListener("DOMContentLoaded", function() {
     // ---- User agent / device flags ----
     const ua = navigator.userAgent;
-
-    isIOS =
+    const isIOSUA =
       /iPad|iPhone|iPod/.test(ua) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
-    isMobile = /Mobi|Android/i.test(ua) || isIOS;
+    isMobile = /Mobi|Android/i.test(ua) || isIOSUA;
 
+    // Detect Safari (desktop & iOS) – block the exam on this browser
     const isSafari = /^((?!chrome|crios|fxios|android).)*safari/i.test(ua);
 
-    // 🔹 Block Safari completely
     if (isSafari) {
       const main = document.querySelector("main");
       if (main) {
@@ -814,15 +866,17 @@
         `;
       }
 
-      const t = document.getElementById("timer");
-      if (t) t.textContent = "";
-      return; // stop all further init
+      const timerEl = document.getElementById("timer");
+      if (timerEl) timerEl.textContent = "";
+      return; // stop all further exam logic on Safari
     }
 
-    // ---- EmailJS init ----
+    // ----- EmailJS init -----
     if (window.emailjs) {
       try {
-        emailjs.init({ publicKey: "Bb0oPYBiZGQcyIz5r" });
+        emailjs.init({
+          publicKey: "Bb0oPYBiZGQcyIz5r",
+        });
       } catch (e) {
         console.error("EmailJS init error:", e);
       }
@@ -835,7 +889,7 @@
     const titleHeader = document.getElementById("examTitleHeader");
 
     if (titleHeader) {
-      titleHeader.textContent = EXAM_CONFIG.examTitleBase;
+      titleHeader.textContent = EXAM_CONFIG.examTitleBase; // base without group
     }
 
     const startBtn = document.getElementById("startBtn");
@@ -860,6 +914,20 @@
     const classCodeInput = document.getElementById("classCode");
     const groupSelect = document.getElementById("groupSelect");
 
+    const studentNameField = document.getElementById("studentNameField");
+    const studentEmailField = document.getElementById("studentEmailField");
+    const classCodeField = document.getElementById("classCodeField");
+    const groupNameField = document.getElementById("groupNameField");
+
+    // Exit overlay elements
+    const exitOverlay = document.getElementById("exitOverlay");
+    const exitOverlayMessage = document.getElementById("exitOverlayMessage");
+    const exitOverlayStay = document.getElementById("exitOverlayStay");
+    const exitOverlayLeave = document.getElementById("exitOverlayLeave");
+
+    const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
+
+    // Safe-blur for Part A dropdowns (iOS bug)
     document.querySelectorAll("#partA select").forEach(sel => {
       sel.addEventListener("mousedown", () => {
         if (isMobile) armSafeBlur(1500);
@@ -869,14 +937,7 @@
       });
     });
 
-    const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
-
-    const studentNameField = document.getElementById("studentNameField");
-    const studentEmailField = document.getElementById("studentEmailField");
-    const classCodeField = document.getElementById("classCodeField");
-    const groupNameField = document.getElementById("groupNameField");
-
-    // Guard required nodes
+    // Guard: if any required node is missing, stop
     const required = [
       login, confirmSec, exam, startBtn, confirmBackBtn, confirmBeginBtn,
       confirmName, confirmEmail, confirmGroup, partA, partB, toPartA, toPartB,
@@ -888,12 +949,12 @@
       return;
     }
 
-    // ----- State flags (scoped to DOMContentLoaded) -----
-  let examSubmitted = false;
-let examActive = false;
-let isStartingExam = false;
-let exitPromptOpen = false;      // avoid multiple popups
-let antiCheatSuspendedUntil = 0; // NEW: small grace window after Cancel
+    // ----- State Flags -----
+    let examSubmitted = false;
+    let examActive = false;
+    let isStartingExam = false;
+    let exitPromptOpen = false;
+    let antiCheatSuspendedUntil = 0;   // grace window after "Rester"
 
     // ----- Helpers -----
     function resetToLanding() {
@@ -908,15 +969,17 @@ let antiCheatSuspendedUntil = 0; // NEW: small grace window after Cancel
       examActive = false;
       examSubmitted = false;
       isStartingExam = false;
+      exitPromptOpen = false;
+      antiCheatSuspendedUntil = 0;
 
       if (form) form.reset();
       if (quill) quill.setText("");
 
-      studentFirstNameInput.value = "";
-      studentLastNameInput.value = "";
-      studentEmailInput.value = "";
-      classCodeInput.value = "";
-      groupSelect.value = "";
+      if (studentFirstNameInput) studentFirstNameInput.value = "";
+      if (studentLastNameInput) studentLastNameInput.value = "";
+      if (studentEmailInput) studentEmailInput.value = "";
+      if (classCodeInput) classCodeInput.value = "";
+      if (groupSelect) groupSelect.value = "";
       selectedGroup = "";
       currentExamTitle = EXAM_CONFIG.examTitleBase;
 
@@ -927,6 +990,8 @@ let antiCheatSuspendedUntil = 0; // NEW: small grace window after Cancel
       login.style.display = "block";
       confirmSec.style.display = "none";
       exam.style.display = "none";
+
+      if (exitOverlay) exitOverlay.style.display = "none";
 
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -980,133 +1045,127 @@ let antiCheatSuspendedUntil = 0; // NEW: small grace window after Cancel
       resetToLanding();
     }
 
- function askToExitExam(reason) {
-  if (!examActive || exitPromptOpen) return;
+    function askToExitExam(reason) {
+      if (!examActive || exitPromptOpen) return;
+      if (Date.now() < antiCheatSuspendedUntil) return;
 
-  exitPromptOpen = true;
+      exitPromptOpen = true;
 
-  const proceed = window.confirm(
-    reason ||
-    "⚠️ Vous êtes sur le point de quitter le mode plein écran.\n\n" +
-    "Si vous continuez, votre épreuve sera effacée.\n\n" +
-    "Voulez-vous vraiment quitter ?"
-  );
+      const msg =
+        reason ||
+        "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
+        "Si vous continuez, votre épreuve sera effacée.";
 
-  exitPromptOpen = false;
-
-  if (proceed) {
-    // Student accepts the consequence → end exam
-    terminateExam(
-      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
-    );
-  } else {
-    // Student chose "Cancel" → give them a short grace window
-    antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds
-
-    // Try to restore fullscreen so they can continue
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      if (exitOverlayMessage) {
+        exitOverlayMessage.textContent = msg.replace(/\n+/g, " ");
+      }
+      if (exitOverlay) {
+        exitOverlay.style.display = "flex";
+      }
     }
-  }
-}
 
-    // LAST NAME in uppercase
+    // Overlay buttons
+    if (exitOverlayStay) {
+      exitOverlayStay.addEventListener("click", () => {
+        // Give a small grace window so blur/fullscreenchange don't retrigger
+        antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds
+        exitPromptOpen = false;
+        if (exitOverlay) exitOverlay.style.display = "none";
+
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      });
+    }
+
+    if (exitOverlayLeave) {
+      exitOverlayLeave.addEventListener("click", () => {
+        exitPromptOpen = false;
+        if (exitOverlay) exitOverlay.style.display = "none";
+
+        terminateExam(
+          "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+        );
+      });
+    }
+
+    // Force LAST NAME input uppercase
     studentLastNameInput.addEventListener("input", () => {
       studentLastNameInput.value = studentLastNameInput.value.toUpperCase();
     });
 
     // ----- Anti-cheat listeners -----
-document.addEventListener("visibilitychange", () => {
-  if (isStartingExam) {
-    console.log("⏱ Ignoring visibilitychange during exam startup");
-    return;
-  }
+    document.addEventListener("visibilitychange", () => {
+      if (isStartingExam) {
+        console.log("⏱ Ignoring visibilitychange during exam startup");
+        return;
+      }
+      if (!examActive) return;
+      if (Date.now() < antiCheatSuspendedUntil) return;
 
-  // NEW: grace window after Cancel
-  if (Date.now() < antiCheatSuspendedUntil) {
-    console.log("⏳ Anti-cheat suspended (visibilitychange)");
-    return;
-  }
-
-  if (examActive && document.hidden) {
-    askToExitExam(
-      "⚠️ Vous êtes sur le point de quitter l'écran de l'épreuve.\n\n" +
-      "Si vous continuez, votre épreuve sera effacée.\n\n" +
-      "Voulez-vous vraiment quitter ?"
-    );
-  }
-});
-
-window.addEventListener("blur", () => {
-  if (isStartingExam) {
-    console.log("⏱ Ignoring blur during exam startup");
-    return;
-  }
-
-  if (!examActive) return;
-
-  // Mobile safe blur (selects / keyboard)
-  if (isMobile && Date.now() < safeBlurUntil) {
-    console.log("📱 Blur ignored (inside safe window)", {
-      now: Date.now(),
-      safeBlurUntil
+      if (document.hidden) {
+        askToExitExam(
+          "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
+          "Si vous continuez, votre épreuve sera effacée."
+        );
+      }
     });
-    return;
-  }
 
-  // NEW: global grace after Cancel
-  if (Date.now() < antiCheatSuspendedUntil) {
-    console.log("⏳ Anti-cheat suspended (blur)");
-    return;
-  }
+    window.addEventListener("blur", () => {
+      if (isStartingExam) {
+        console.log("⏱ Ignoring blur during exam startup");
+        return;
+      }
+      if (!examActive) return;
 
-  askToExitExam(
-    "⚠️ Vous êtes sur le point de quitter la fenêtre de l'épreuve.\n\n" +
-    "Si vous continuez, votre épreuve sera effacée.\n\n" +
-    "Voulez-vous vraiment quitter ?"
-  );
-});
+      // Ignore immediate blurs on mobile caused by selects / keyboard
+      if (isMobile && Date.now() < safeBlurUntil) {
+        console.log("📱 Blur ignored (inside safe window)", {
+          now: Date.now(),
+          safeBlurUntil
+        });
+        return;
+      }
 
-  document.addEventListener("fullscreenchange", () => {
-  console.log("📺 fullscreenchange fired", {
-    examActive,
-    fullscreenElement: !!document.fullscreenElement,
-    isStartingExam
-  });
+      if (Date.now() < antiCheatSuspendedUntil) {
+        console.log("⏱ Blur ignored (anti-cheat grace window)");
+        return;
+      }
 
-  if (!examActive || isStartingExam) return;
+      askToExitExam(
+        "Vous êtes sur le point de quitter la fenêtre de l'épreuve. " +
+        "Si vous continuez, votre épreuve sera effacée."
+      );
+    });
 
-  // NEW: grace after Cancel
-  if (Date.now() < antiCheatSuspendedUntil) {
-    console.log("⏳ Anti-cheat suspended (fullscreenchange)");
-    return;
-  }
+    document.addEventListener("fullscreenchange", () => {
+      console.log("📺 fullscreenchange fired", {
+        examActive,
+        fullscreenElement: !!document.fullscreenElement,
+        isStartingExam
+      });
 
-  if (!document.fullscreenElement) {
-    askToExitExam(
-      "⚠️ Vous êtes sur le point de quitter le mode plein écran.\n\n" +
-      "Si vous continuez, votre épreuve sera effacée.\n\n" +
-      "Voulez-vous vraiment quitter ?"
-    );
-  }
-});
+      if (!examActive || isStartingExam) return;
+      if (Date.now() < antiCheatSuspendedUntil) return;
 
- document.addEventListener("keydown", e => {
-  if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
-    // NEW: grace after Cancel
-    if (Date.now() < antiCheatSuspendedUntil) {
-      console.log("⏳ Anti-cheat suspended (keydown/Escape)");
-      return;
-    }
+      if (!document.fullscreenElement) {
+        askToExitExam(
+          "Vous êtes sur le point de quitter le mode plein écran. " +
+          "Si vous continuez, votre épreuve sera effacée."
+        );
+      }
+    });
 
-    e.preventDefault();
-    askToExitExam(
-      "⚠️ Vous avez appuyé sur Échap, ce qui quitte le mode plein écran.\n\n" +
-      "Si vous continuez, votre épreuve sera effacée.\n\n" +
-      "Voulez-vous vraiment quitter ?"
-    );
-  }
-});
+    document.addEventListener("keydown", e => {
+      if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
+        if (Date.now() < antiCheatSuspendedUntil) return;
+        e.preventDefault();
+        askToExitExam(
+          "Vous avez appuyé sur Échap, ce qui quitte le mode plein écran. " +
+          "Si vous continuez, votre épreuve sera effacée."
+        );
+      }
+    });
 
     // Start from a clean landing state
     resetToLanding();
@@ -1272,7 +1331,6 @@ window.addEventListener("blur", () => {
 
       const partBScore = "___ / 10";
       const finalNote = "___ / 20";
-
       const group = selectedGroup || groupNameField.value || EXAM_CONFIG.classLabel;
 
       const htmlReport = `
