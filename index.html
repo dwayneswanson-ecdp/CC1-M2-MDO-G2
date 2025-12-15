@@ -324,9 +324,18 @@ body.exit-lock main {
   filter: blur(6px);
   pointer-events: none;
 }
+    /* Blur background when exit warning is active */
+body.overlay-active main,
+body.overlay-active header {
+  filter: blur(5px);
+  pointer-events: none;
+}
+
+body.overlay-active {
+  overflow: hidden;
+}
   }
 </style>
-
 
 
   <header>
@@ -966,6 +975,9 @@ body.exit-lock main {
     let isStartingExam = false;
     let exitPromptOpen = false;
     let antiCheatSuspendedUntil = 0;   // grace window after "Rester"
+    let violationCount = 0;
+    const MAX_VIOLATIONS = 3;
+    let exitCountdownTimerId = null;
 
     // ----- Helpers -----
     function resetToLanding() {
@@ -977,11 +989,17 @@ body.exit-lock main {
         console.error("Error clearing timer in resetToLanding:", e);
       }
 
+      if (exitCountdownTimerId) {
+        clearInterval(exitCountdownTimerId);
+        exitCountdownTimerId = null;
+      }
+
       examActive = false;
       examSubmitted = false;
       isStartingExam = false;
       exitPromptOpen = false;
       antiCheatSuspendedUntil = 0;
+      violationCount = 0;
 
       if (form) form.reset();
       if (quill) quill.setText("");
@@ -1003,7 +1021,7 @@ body.exit-lock main {
       exam.style.display = "none";
 
       if (exitOverlay) exitOverlay.style.display = "none";
-       document.body.classList.remove("exit-lock");   // <--- add this
+      document.body.classList.remove("overlay-active");
 
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -1058,51 +1076,122 @@ body.exit-lock main {
     }
 
     function askToExitExam(reason) {
-  if (!examActive || exitPromptOpen) return;
-  if (Date.now() < antiCheatSuspendedUntil) return;
+      if (!examActive) return;
 
-  exitPromptOpen = true;
+      const now = Date.now();
 
-  const msg =
-    reason ||
-    "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
-    "Si vous continuez, votre épreuve sera effacée.";
+      // If we're in a short "grace" window after returning to fullscreen, ignore
+      if (now < antiCheatSuspendedUntil) {
+        console.log("⏱ Exit ignored (anti-cheat grace window)");
+        return;
+      }
 
-  if (exitOverlayMessage) {
-    exitOverlayMessage.textContent = msg.replace(/\n+/g, " ");
-  }
-  if (exitOverlay) {
-    exitOverlay.style.display = "flex";
-  }
+      // If max violations reached, auto-submit immediately
+      if (violationCount >= MAX_VIOLATIONS) {
+        console.log("🚫 Max violations reached → auto-submit");
+        if (exitOverlay) exitOverlay.style.display = "none";
+        document.body.classList.remove("overlay-active");
+        alert("L'épreuve va être envoyée automatiquement après plusieurs tentatives de sortie.");
+        submitExam();
+        return;
+      }
 
-  // 🔒 Blur + lock background
-  document.body.classList.add("exit-lock");
-}
+      if (exitPromptOpen) return;
+
+      // Count this as a violation
+      violationCount += 1;
+
+      exitPromptOpen = true;
+
+      let baseMsg =
+        reason ||
+        "Vous avez quitté l'écran de l'épreuve.";
+
+      const remainingChances = MAX_VIOLATIONS - violationCount;
+      if (remainingChances > 0) {
+        baseMsg += ` Vous avez encore ${remainingChances} tentative(s) avant l'envoi automatique de l'épreuve.`;
+      } else {
+        baseMsg += " La prochaine tentative entraînera l'envoi automatique de l'épreuve.";
+      }
+
+      let secondsLeft = 15;
+
+      function updateOverlayText() {
+        if (!exitOverlayMessage) return;
+        exitOverlayMessage.textContent =
+          `${baseMsg} Vous avez ${secondsLeft} seconde(s) pour revenir dans l'épreuve, ` +
+          "sinon elle sera effacée et devra être recommencée.";
+      }
+
+      updateOverlayText();
+
+      if (exitOverlay) {
+        exitOverlay.style.display = "flex";
+        document.body.classList.add("overlay-active");
+      }
+
+      if (exitCountdownTimerId) {
+        clearInterval(exitCountdownTimerId);
+        exitCountdownTimerId = null;
+      }
+
+      exitCountdownTimerId = setInterval(() => {
+        secondsLeft -= 1;
+        if (secondsLeft <= 0) {
+          clearInterval(exitCountdownTimerId);
+          exitCountdownTimerId = null;
+          exitPromptOpen = false;
+          if (exitOverlay) {
+            exitOverlay.style.display = "none";
+            document.body.classList.remove("overlay-active");
+          }
+          terminateExam(
+            "Le délai pour revenir dans l'épreuve est dépassé. L'épreuve a été effacée et doit être recommencée."
+          );
+        } else {
+          updateOverlayText();
+        }
+      }, 1000);
+    }
 
     // Overlay buttons
-   if (exitOverlayStay) {
-  exitOverlayStay.addEventListener("click", () => {
-    antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds
-    exitPromptOpen = false;
-    if (exitOverlay) exitOverlay.style.display = "none";
-    document.body.classList.remove("exit-lock");   // <--- add this
+    if (exitOverlayStay) {
+      exitOverlayStay.addEventListener("click", () => {
+        // Stop countdown
+        if (exitCountdownTimerId) {
+          clearInterval(exitCountdownTimerId);
+          exitCountdownTimerId = null;
+        }
 
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
+        // Short grace window to avoid instant re-trigger
+        antiCheatSuspendedUntil = Date.now() + 2000;
+        exitPromptOpen = false;
+
+        if (exitOverlay) exitOverlay.style.display = "none";
+        document.body.classList.remove("overlay-active");
+
+        // Re-enter fullscreen if we left it
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      });
     }
-  });
-}
 
-if (exitOverlayLeave) {
-  exitOverlayLeave.addEventListener("click", () => {
-    exitPromptOpen = false;
-    if (exitOverlay) exitOverlay.style.display = "none";
-    document.body.classList.remove("exit-lock");   // <--- add this
-    terminateExam(
-      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
-    );
-  });
-}
+    if (exitOverlayLeave) {
+      exitOverlayLeave.addEventListener("click", () => {
+        if (exitCountdownTimerId) {
+          clearInterval(exitCountdownTimerId);
+          exitCountdownTimerId = null;
+        }
+        exitPromptOpen = false;
+        if (exitOverlay) exitOverlay.style.display = "none";
+        document.body.classList.remove("overlay-active");
+
+        terminateExam(
+          "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+        );
+      });
+    }
 
     // Force LAST NAME input uppercase
     studentLastNameInput.addEventListener("input", () => {
@@ -1120,8 +1209,7 @@ if (exitOverlayLeave) {
 
       if (document.hidden) {
         askToExitExam(
-          "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
-          "Si vous continuez, votre épreuve sera effacée."
+          "Vous êtes sur le point de quitter l'écran de l'épreuve."
         );
       }
     });
@@ -1148,36 +1236,33 @@ if (exitOverlayLeave) {
       }
 
       askToExitExam(
-        "Vous êtes sur le point de quitter la fenêtre de l'épreuve. " +
-        "Si vous continuez, votre épreuve sera effacée."
+        "Vous êtes sur le point de quitter la fenêtre de l'épreuve."
       );
     });
 
-  document.addEventListener("fullscreenchange", () => {
-  console.log("📺 fullscreenchange fired", {
-    examActive,
-    fullscreenElement: !!document.fullscreenElement,
-    isStartingExam
-  });
+    document.addEventListener("fullscreenchange", () => {
+      console.log("📺 fullscreenchange fired", {
+        examActive,
+        fullscreenElement: !!document.fullscreenElement,
+        isStartingExam
+      });
 
-  if (!examActive || isStartingExam) return;
+      if (!examActive || isStartingExam) return;
+      if (Date.now() < antiCheatSuspendedUntil) return;
 
-  // If we just LEFT fullscreen while the exam is active → show the overlay
-  if (!document.fullscreenElement) {
-    askToExitExam(
-      "Vous êtes sur le point de quitter le mode plein écran. " +
-      "Si vous continuez, votre épreuve sera effacée."
-    );
-  }
-});
+      if (!document.fullscreenElement) {
+        askToExitExam(
+          "Vous êtes sur le point de quitter le mode plein écran."
+        );
+      }
+    });
 
     document.addEventListener("keydown", e => {
       if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
         if (Date.now() < antiCheatSuspendedUntil) return;
         e.preventDefault();
         askToExitExam(
-          "Vous avez appuyé sur Échap, ce qui quitte le mode plein écran. " +
-          "Si vous continuez, votre épreuve sera effacée."
+          "Vous avez appuyé sur Échap, ce qui quitte le mode plein écran."
         );
       }
     });
