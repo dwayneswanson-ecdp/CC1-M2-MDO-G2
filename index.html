@@ -889,10 +889,11 @@
     }
 
     // ----- State flags (scoped to DOMContentLoaded) -----
-    let examSubmitted = false;
-    let examActive = false;
-    let isStartingExam = false;
-    let exitPromptOpen = false;
+  let examSubmitted = false;
+let examActive = false;
+let isStartingExam = false;
+let exitPromptOpen = false;      // avoid multiple popups
+let antiCheatSuspendedUntil = 0; // NEW: small grace window after Cancel
 
     // ----- Helpers -----
     function resetToLanding() {
@@ -979,31 +980,35 @@
       resetToLanding();
     }
 
-    function askToExitExam(reason) {
-      if (!examActive || exitPromptOpen) return;
+ function askToExitExam(reason) {
+  if (!examActive || exitPromptOpen) return;
 
-      exitPromptOpen = true;
+  exitPromptOpen = true;
 
-      const proceed = window.confirm(
-        reason ||
-        "Vous êtes sur le point de quitter le mode plein écran.\n\n" +
-        "Si vous continuez, votre épreuve sera effacée.\n\n" +
-        "Voulez-vous vraiment quitter ?"
-      );
+  const proceed = window.confirm(
+    reason ||
+    "⚠️ Vous êtes sur le point de quitter le mode plein écran.\n\n" +
+    "Si vous continuez, votre épreuve sera effacée.\n\n" +
+    "Voulez-vous vraiment quitter ?"
+  );
 
-      exitPromptOpen = false;
+  exitPromptOpen = false;
 
-      if (proceed) {
-        terminateExam(
-          "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
-        );
-      } else {
-        // Try to restore fullscreen so they can continue
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
-      }
+  if (proceed) {
+    // Student accepts the consequence → end exam
+    terminateExam(
+      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+    );
+  } else {
+    // Student chose "Cancel" → give them a short grace window
+    antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds
+
+    // Try to restore fullscreen so they can continue
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
     }
+  }
+}
 
     // LAST NAME in uppercase
     studentLastNameInput.addEventListener("input", () => {
@@ -1011,71 +1016,97 @@
     });
 
     // ----- Anti-cheat listeners -----
-    document.addEventListener("visibilitychange", () => {
-      if (isStartingExam) {
-        console.log("⏱ Ignoring visibilitychange during exam startup");
-        return;
-      }
-      if (examActive && document.hidden) {
-        askToExitExam(
-          "Vous êtes sur le point de quitter l'écran de l'épreuve.\n\n" +
-          "Si vous continuez, votre épreuve sera effacée.\n\n" +
-          "Voulez-vous vraiment quitter ?"
-        );
-      }
+document.addEventListener("visibilitychange", () => {
+  if (isStartingExam) {
+    console.log("⏱ Ignoring visibilitychange during exam startup");
+    return;
+  }
+
+  // NEW: grace window after Cancel
+  if (Date.now() < antiCheatSuspendedUntil) {
+    console.log("⏳ Anti-cheat suspended (visibilitychange)");
+    return;
+  }
+
+  if (examActive && document.hidden) {
+    askToExitExam(
+      "⚠️ Vous êtes sur le point de quitter l'écran de l'épreuve.\n\n" +
+      "Si vous continuez, votre épreuve sera effacée.\n\n" +
+      "Voulez-vous vraiment quitter ?"
+    );
+  }
+});
+
+window.addEventListener("blur", () => {
+  if (isStartingExam) {
+    console.log("⏱ Ignoring blur during exam startup");
+    return;
+  }
+
+  if (!examActive) return;
+
+  // Mobile safe blur (selects / keyboard)
+  if (isMobile && Date.now() < safeBlurUntil) {
+    console.log("📱 Blur ignored (inside safe window)", {
+      now: Date.now(),
+      safeBlurUntil
     });
+    return;
+  }
 
-    window.addEventListener("blur", () => {
-      if (isStartingExam) {
-        console.log("⏱ Ignoring blur during exam startup");
-        return;
-      }
+  // NEW: global grace after Cancel
+  if (Date.now() < antiCheatSuspendedUntil) {
+    console.log("⏳ Anti-cheat suspended (blur)");
+    return;
+  }
 
-      if (!examActive) return;
+  askToExitExam(
+    "⚠️ Vous êtes sur le point de quitter la fenêtre de l'épreuve.\n\n" +
+    "Si vous continuez, votre épreuve sera effacée.\n\n" +
+    "Voulez-vous vraiment quitter ?"
+  );
+});
 
-      if (isMobile && Date.now() < safeBlurUntil) {
-        console.log("📱 Blur ignored (inside safe window)", {
-          now: Date.now(),
-          safeBlurUntil
-        });
-        return;
-      }
+  document.addEventListener("fullscreenchange", () => {
+  console.log("📺 fullscreenchange fired", {
+    examActive,
+    fullscreenElement: !!document.fullscreenElement,
+    isStartingExam
+  });
 
-      askToExitExam(
-        "Vous êtes sur le point de quitter la fenêtre de l'épreuve.\n\n" +
-        "Si vous continuez, votre épreuve sera effacée.\n\n" +
-        "Voulez-vous vraiment quitter ?"
-      );
-    });
+  if (!examActive || isStartingExam) return;
 
-    document.addEventListener("fullscreenchange", () => {
-      console.log("📺 fullscreenchange fired", {
-        examActive,
-        fullscreenElement: !!document.fullscreenElement,
-        isStartingExam
-      });
+  // NEW: grace after Cancel
+  if (Date.now() < antiCheatSuspendedUntil) {
+    console.log("⏳ Anti-cheat suspended (fullscreenchange)");
+    return;
+  }
 
-      if (!examActive || isStartingExam) return;
+  if (!document.fullscreenElement) {
+    askToExitExam(
+      "⚠️ Vous êtes sur le point de quitter le mode plein écran.\n\n" +
+      "Si vous continuez, votre épreuve sera effacée.\n\n" +
+      "Voulez-vous vraiment quitter ?"
+    );
+  }
+});
 
-      if (!document.fullscreenElement) {
-        askToExitExam(
-          "Vous êtes sur le point de quitter le mode plein écran.\n\n" +
-          "Si vous continuez, votre épreuve sera effacée.\n\n" +
-          "Voulez-vous vraiment quitter ?"
-        );
-      }
-    });
+ document.addEventListener("keydown", e => {
+  if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
+    // NEW: grace after Cancel
+    if (Date.now() < antiCheatSuspendedUntil) {
+      console.log("⏳ Anti-cheat suspended (keydown/Escape)");
+      return;
+    }
 
-    document.addEventListener("keydown", e => {
-      if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
-        e.preventDefault();
-        askToExitExam(
-          "Vous avez appuyé sur Échap, ce qui quitte le mode plein écran.\n\n" +
-          "Si vous continuez, votre épreuve sera effacée.\n\n" +
-          "Voulez-vous vraiment quitter ?"
-        );
-      }
-    });
+    e.preventDefault();
+    askToExitExam(
+      "⚠️ Vous avez appuyé sur Échap, ce qui quitte le mode plein écran.\n\n" +
+      "Si vous continuez, votre épreuve sera effacée.\n\n" +
+      "Voulez-vous vraiment quitter ?"
+    );
+  }
+});
 
     // Start from a clean landing state
     resetToLanding();
