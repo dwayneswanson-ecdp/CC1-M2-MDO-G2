@@ -314,6 +314,16 @@
       padding: 20px 18px 24px;
       max-width: 100%;
     }
+    /* When the exit overlay is open, visually lock + blur the exam behind */
+body.exit-lock {
+  overflow: hidden;
+}
+
+body.exit-lock header,
+body.exit-lock main {
+  filter: blur(6px);
+  pointer-events: none;
+}
   }
 </style>
 
@@ -637,7 +647,8 @@
   display:none;
   position:fixed;
   inset:0;
-  background:rgba(15,23,42,0.55);
+  background:rgba(15,23,42,0.80);
+  backdrop-filter:blur(6px);
   z-index:2000;
   align-items:center;
   justify-content:center;
@@ -992,6 +1003,7 @@
       exam.style.display = "none";
 
       if (exitOverlay) exitOverlay.style.display = "none";
+       document.body.classList.remove("exit-lock");   // <--- add this
 
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -1046,48 +1058,51 @@
     }
 
     function askToExitExam(reason) {
-      if (!examActive || exitPromptOpen) return;
-      if (Date.now() < antiCheatSuspendedUntil) return;
+  if (!examActive || exitPromptOpen) return;
+  if (Date.now() < antiCheatSuspendedUntil) return;
 
-      exitPromptOpen = true;
+  exitPromptOpen = true;
 
-      const msg =
-        reason ||
-        "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
-        "Si vous continuez, votre épreuve sera effacée.";
+  const msg =
+    reason ||
+    "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
+    "Si vous continuez, votre épreuve sera effacée.";
 
-      if (exitOverlayMessage) {
-        exitOverlayMessage.textContent = msg.replace(/\n+/g, " ");
-      }
-      if (exitOverlay) {
-        exitOverlay.style.display = "flex";
-      }
-    }
+  if (exitOverlayMessage) {
+    exitOverlayMessage.textContent = msg.replace(/\n+/g, " ");
+  }
+  if (exitOverlay) {
+    exitOverlay.style.display = "flex";
+  }
+
+  // 🔒 Blur + lock background
+  document.body.classList.add("exit-lock");
+}
 
     // Overlay buttons
-    if (exitOverlayStay) {
-      exitOverlayStay.addEventListener("click", () => {
-        // Give a small grace window so blur/fullscreenchange don't retrigger
-        antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds
-        exitPromptOpen = false;
-        if (exitOverlay) exitOverlay.style.display = "none";
+   if (exitOverlayStay) {
+  exitOverlayStay.addEventListener("click", () => {
+    antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds
+    exitPromptOpen = false;
+    if (exitOverlay) exitOverlay.style.display = "none";
+    document.body.classList.remove("exit-lock");   // <--- add this
 
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
-      });
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
     }
+  });
+}
 
-    if (exitOverlayLeave) {
-      exitOverlayLeave.addEventListener("click", () => {
-        exitPromptOpen = false;
-        if (exitOverlay) exitOverlay.style.display = "none";
-
-        terminateExam(
-          "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
-        );
-      });
-    }
+if (exitOverlayLeave) {
+  exitOverlayLeave.addEventListener("click", () => {
+    exitPromptOpen = false;
+    if (exitOverlay) exitOverlay.style.display = "none";
+    document.body.classList.remove("exit-lock");   // <--- add this
+    terminateExam(
+      "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
+    );
+  });
+}
 
     // Force LAST NAME input uppercase
     studentLastNameInput.addEventListener("input", () => {
@@ -1138,23 +1153,23 @@
       );
     });
 
-    document.addEventListener("fullscreenchange", () => {
-      console.log("📺 fullscreenchange fired", {
-        examActive,
-        fullscreenElement: !!document.fullscreenElement,
-        isStartingExam
-      });
+  document.addEventListener("fullscreenchange", () => {
+  console.log("📺 fullscreenchange fired", {
+    examActive,
+    fullscreenElement: !!document.fullscreenElement,
+    isStartingExam
+  });
 
-      if (!examActive || isStartingExam) return;
-      if (Date.now() < antiCheatSuspendedUntil) return;
+  if (!examActive || isStartingExam) return;
 
-      if (!document.fullscreenElement) {
-        askToExitExam(
-          "Vous êtes sur le point de quitter le mode plein écran. " +
-          "Si vous continuez, votre épreuve sera effacée."
-        );
-      }
-    });
+  // If we just LEFT fullscreen while the exam is active → show the overlay
+  if (!document.fullscreenElement) {
+    askToExitExam(
+      "Vous êtes sur le point de quitter le mode plein écran. " +
+      "Si vous continuez, votre épreuve sera effacée."
+    );
+  }
+});
 
     document.addEventListener("keydown", e => {
       if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
