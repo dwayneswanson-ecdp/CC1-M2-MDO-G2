@@ -389,6 +389,11 @@ body.overlay-active {
       <p class="muted">
         Veuillez vérifier que ces informations sont correctes. Si quelque chose ne l’est pas, cliquez sur « Modifier » pour revenir à l’écran précédent.
       </p>
+      <p class="muted">
+  L’épreuve se déroule en plein écran. Quitter la fenêtre ou le plein écran déclenche un avertissement, 
+  et ces évènements sont enregistrés dans un <strong>récapitulatif technique de session</strong> 
+  envoyé à l’enseignant.
+</p>
       <div class="btn-row">
         <button type="button" class="btn-light" id="confirmBackBtn">← Modifier</button>
         <button type="button" id="confirmBeginBtn">Commencer l'épreuve →</button>
@@ -957,6 +962,31 @@ body.overlay-active {
       });
     });
 
+    // -------- Session activity log --------
+    const sessionEvents = [];
+
+    function formatTimeStamp(date = new Date()) {
+      try {
+        return date.toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+      } catch (e) {
+        return date.toISOString();
+      }
+    }
+
+    function logEvent(label, detail) {
+      const entry = {
+        time: formatTimeStamp(),
+        label: label || "",
+        detail: detail || ""
+      };
+      sessionEvents.push(entry);
+      console.log("[SESSION]", entry);
+    }
+
     // Guard: if any required node is missing, stop
     const required = [
       login, confirmSec, exam, startBtn, confirmBackBtn, confirmBeginBtn,
@@ -975,9 +1005,6 @@ body.overlay-active {
     let isStartingExam = false;
     let exitPromptOpen = false;
     let antiCheatSuspendedUntil = 0;   // grace window after "Rester"
-    let violationCount = 0;
-    const MAX_VIOLATIONS = 3;
-    let exitCountdownTimerId = null;
 
     // ----- Helpers -----
     function resetToLanding() {
@@ -989,17 +1016,12 @@ body.overlay-active {
         console.error("Error clearing timer in resetToLanding:", e);
       }
 
-      if (exitCountdownTimerId) {
-        clearInterval(exitCountdownTimerId);
-        exitCountdownTimerId = null;
-      }
-
       examActive = false;
       examSubmitted = false;
       isStartingExam = false;
       exitPromptOpen = false;
       antiCheatSuspendedUntil = 0;
-      violationCount = 0;
+      sessionEvents.length = 0;   // clear log
 
       if (form) form.reset();
       if (quill) quill.setText("");
@@ -1021,7 +1043,6 @@ body.overlay-active {
       exam.style.display = "none";
 
       if (exitOverlay) exitOverlay.style.display = "none";
-      document.body.classList.remove("overlay-active");
 
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -1067,6 +1088,8 @@ body.overlay-active {
         return;
       }
 
+      logEvent("Exam terminated", message || "Exam terminated by system.");
+
       alert(
         message ||
         "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
@@ -1075,102 +1098,36 @@ body.overlay-active {
       resetToLanding();
     }
 
-    function askToExitExam(reason) {
-      if (!examActive) return;
-
-      const now = Date.now();
-
-      // If we're in a short "grace" window after returning to fullscreen, ignore
-      if (now < antiCheatSuspendedUntil) {
-        console.log("⏱ Exit ignored (anti-cheat grace window)");
-        return;
-      }
-
-      // If max violations reached, auto-submit immediately
-      if (violationCount >= MAX_VIOLATIONS) {
-        console.log("🚫 Max violations reached → auto-submit");
-        if (exitOverlay) exitOverlay.style.display = "none";
-        document.body.classList.remove("overlay-active");
-        alert("L'épreuve va être envoyée automatiquement après plusieurs tentatives de sortie.");
-        submitExam();
-        return;
-      }
-
-      if (exitPromptOpen) return;
-
-      // Count this as a violation
-      violationCount += 1;
+    function askToExitExam(reason, source) {
+      if (!examActive || exitPromptOpen) return;
+      if (Date.now() < antiCheatSuspendedUntil) return;
 
       exitPromptOpen = true;
 
-      let baseMsg =
+      const msg =
         reason ||
-        "Vous avez quitté l'écran de l'épreuve.";
+        "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
+        "Si vous continuez, votre épreuve sera effacée.";
 
-      const remainingChances = MAX_VIOLATIONS - violationCount;
-      if (remainingChances > 0) {
-        baseMsg += ` Vous avez encore ${remainingChances} tentative(s) avant l'envoi automatique de l'épreuve.`;
-      } else {
-        baseMsg += " La prochaine tentative entraînera l'envoi automatique de l'épreuve.";
+      logEvent("Exit warning shown", source ? `${source} – ${msg}` : msg);
+
+      if (exitOverlayMessage) {
+        exitOverlayMessage.textContent = msg.replace(/\n+/g, " ");
       }
-
-      let secondsLeft = 15;
-
-      function updateOverlayText() {
-        if (!exitOverlayMessage) return;
-        exitOverlayMessage.textContent =
-          `${baseMsg} Vous avez ${secondsLeft} seconde(s) pour revenir dans l'épreuve, ` +
-          "sinon elle sera effacée et devra être recommencée.";
-      }
-
-      updateOverlayText();
-
       if (exitOverlay) {
         exitOverlay.style.display = "flex";
-        document.body.classList.add("overlay-active");
       }
-
-      if (exitCountdownTimerId) {
-        clearInterval(exitCountdownTimerId);
-        exitCountdownTimerId = null;
-      }
-
-      exitCountdownTimerId = setInterval(() => {
-        secondsLeft -= 1;
-        if (secondsLeft <= 0) {
-          clearInterval(exitCountdownTimerId);
-          exitCountdownTimerId = null;
-          exitPromptOpen = false;
-          if (exitOverlay) {
-            exitOverlay.style.display = "none";
-            document.body.classList.remove("overlay-active");
-          }
-          terminateExam(
-            "Le délai pour revenir dans l'épreuve est dépassé. L'épreuve a été effacée et doit être recommencée."
-          );
-        } else {
-          updateOverlayText();
-        }
-      }, 1000);
     }
 
     // Overlay buttons
     if (exitOverlayStay) {
       exitOverlayStay.addEventListener("click", () => {
-        // Stop countdown
-        if (exitCountdownTimerId) {
-          clearInterval(exitCountdownTimerId);
-          exitCountdownTimerId = null;
-        }
-
-        // Short grace window to avoid instant re-trigger
-        antiCheatSuspendedUntil = Date.now() + 2000;
+        antiCheatSuspendedUntil = Date.now() + 2000; // 2 seconds grace
         exitPromptOpen = false;
-
         if (exitOverlay) exitOverlay.style.display = "none";
-        document.body.classList.remove("overlay-active");
 
-        // Re-enter fullscreen if we left it
+        logEvent("Student chose to stay in exam", "Fullscreen requested again.");
+
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
         }
@@ -1179,14 +1136,10 @@ body.overlay-active {
 
     if (exitOverlayLeave) {
       exitOverlayLeave.addEventListener("click", () => {
-        if (exitCountdownTimerId) {
-          clearInterval(exitCountdownTimerId);
-          exitCountdownTimerId = null;
-        }
         exitPromptOpen = false;
         if (exitOverlay) exitOverlay.style.display = "none";
-        document.body.classList.remove("overlay-active");
 
+        logEvent("Student chose to leave exam", "Exam will be terminated.");
         terminateExam(
           "Vous avez quitté l'écran de l'épreuve. L'épreuve est terminée et doit être recommencée."
         );
@@ -1208,8 +1161,11 @@ body.overlay-active {
       if (Date.now() < antiCheatSuspendedUntil) return;
 
       if (document.hidden) {
+        logEvent("Window visibility lost", "Page hidden (visibilitychange)");
         askToExitExam(
-          "Vous êtes sur le point de quitter l'écran de l'épreuve."
+          "Vous êtes sur le point de quitter l'écran de l'épreuve. " +
+          "Si vous continuez, votre épreuve sera effacée.",
+          "visibilitychange"
         );
       }
     });
@@ -1221,7 +1177,6 @@ body.overlay-active {
       }
       if (!examActive) return;
 
-      // Ignore immediate blurs on mobile caused by selects / keyboard
       if (isMobile && Date.now() < safeBlurUntil) {
         console.log("📱 Blur ignored (inside safe window)", {
           now: Date.now(),
@@ -1235,8 +1190,11 @@ body.overlay-active {
         return;
       }
 
+      logEvent("Window focus lost", "blur event");
       askToExitExam(
-        "Vous êtes sur le point de quitter la fenêtre de l'épreuve."
+        "Vous êtes sur le point de quitter la fenêtre de l'épreuve. " +
+        "Si vous continuez, votre épreuve sera effacée.",
+        "blur"
       );
     });
 
@@ -1251,8 +1209,11 @@ body.overlay-active {
       if (Date.now() < antiCheatSuspendedUntil) return;
 
       if (!document.fullscreenElement) {
+        logEvent("Fullscreen exited", "fullscreenchange event");
         askToExitExam(
-          "Vous êtes sur le point de quitter le mode plein écran."
+          "Vous êtes sur le point de quitter le mode plein écran. " +
+          "Si vous continuez, votre épreuve sera effacée.",
+          "fullscreenchange"
         );
       }
     });
@@ -1261,8 +1222,12 @@ body.overlay-active {
       if ((e.key === "Escape" || e.key === "Esc") && examActive && !isStartingExam) {
         if (Date.now() < antiCheatSuspendedUntil) return;
         e.preventDefault();
+
+        logEvent("Escape key pressed", "Possible fullscreen exit (Escape)");
         askToExitExam(
-          "Vous avez appuyé sur Échap, ce qui quitte le mode plein écran."
+          "Vous avez appuyé sur Échap, ce qui quitte le mode plein écran. " +
+          "Si vous continuez, votre épreuve sera effacée.",
+          "keydown(Escape)"
         );
       }
     });
@@ -1296,6 +1261,8 @@ body.overlay-active {
       }
 
       examActive = true;
+
+      logEvent("Exam started", `Group: ${group}, Name: ${fullName}`);
 
       if (!examDeadline) {
         examDeadline = Date.now() + EXAM_CONFIG.timeLimitMinutes * 60 * 1000;
@@ -1374,12 +1341,14 @@ body.overlay-active {
     toPartB.addEventListener("click", () => {
       partA.classList.remove("active");
       partB.classList.add("active");
+      logEvent("Moved to Part B", "Student navigated from Part A to Part B");
       ensureQuill();
     });
 
     toPartA.addEventListener("click", () => {
       partB.classList.remove("active");
       partA.classList.add("active");
+      logEvent("Returned to Part A", "Student navigated from Part B to Part A");
     });
 
     // Submit handler
@@ -1398,6 +1367,8 @@ body.overlay-active {
         submitBtn.disabled = true;
         submitBtn.textContent = "Envoi en cours…";
       }
+
+      logEvent("Exam submitted", "Student clicked submit");
 
       const fd = new FormData(form);
       const name = fd.get("studentName") || studentNameField.value;
@@ -1432,6 +1403,43 @@ body.overlay-active {
       const partBScore = "___ / 10";
       const finalNote = "___ / 20";
       const group = selectedGroup || groupNameField.value || EXAM_CONFIG.classLabel;
+
+      // Build session activity log HTML
+      let sessionLogHTML = "";
+      if (sessionEvents.length > 0) {
+        const rows = sessionEvents.map(ev => `
+          <tr>
+            <td style="padding:6px 8px;border:1px solid #ccc;">${ev.time}</td>
+            <td style="padding:6px 8px;border:1px solid #ccc;">${ev.label}</td>
+            <td style="padding:6px 8px;border:1px solid #ccc;">${ev.detail}</td>
+          </tr>
+        `).join("");
+
+        sessionLogHTML = `
+          <hr style="border:none;border-top:1px solid #ddd;margin:16px 0;">
+          <h4 style="color:#004080;margin:10px 0 8px 0;">Exam session activity log</h4>
+          <table style="border-collapse:collapse;width:100%;font-size:13px;">
+            <thead>
+              <tr style="background:#f3f4f6;color:#111827;text-align:left;">
+                <th style="padding:6px 8px;border:1px solid #ccc;">Time</th>
+                <th style="padding:6px 8px;border:1px solid #ccc;">Event</th>
+                <th style="padding:6px 8px;border:1px solid #ccc;">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        `;
+      } else {
+        sessionLogHTML = `
+          <hr style="border:none;border-top:1px solid #ddd;margin:16px 0;">
+          <h4 style="color:#004080;margin:10px 0 8px 0;">Exam session activity log</h4>
+          <p style="font-size:13px;color:#4b5563;margin:4px 0 0 0;">
+            Aucun évènement particulier détecté pendant la session (pas de changement de fenêtre ou de sortie du plein écran).
+          </p>
+        `;
+      }
 
       const htmlReport = `
         <h2 style="color:#004080;margin:0 0 8px 0;">
@@ -1503,6 +1511,8 @@ body.overlay-active {
           </tr>
         </table>
 
+        ${sessionLogHTML}
+
         <div style="border-top:1px solid #ccc;margin-top:16px;padding-top:8px;font-size:12px;color:#555;">
           <em>This report was generated automatically for the English Exam – Business Resources.</em>
         </div>
@@ -1554,3 +1564,4 @@ body.overlay-active {
     }
   });
 </script>
+
