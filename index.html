@@ -23,6 +23,7 @@
     }
     * { translate: none !important; }
 
+  
     /* Global body */
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
@@ -258,9 +259,22 @@
       padding-left: 1.5rem; /* keeps automatic numbering */
     }
 
-    #partA ol li {
-      margin-bottom: 12px;
-    }
+    /* Underline each vocab row with a faint separator */
+#partA ol li {
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+#partA ol li:last-child {
+  border-bottom: none;
+}
+
+/* Small preview of the full selected definition */
+.definition-preview {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
 
     .vocab-row {
       display: grid;
@@ -445,6 +459,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q1"></div>
               </div>
             </li>
 
@@ -464,6 +479,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q2"></div>
               </div>
             </li>
 
@@ -483,6 +499,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q3"></div>
               </div>
             </li>
 
@@ -502,6 +519,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q4"></div>
               </div>
             </li>
 
@@ -521,6 +539,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q5"></div>
               </div>
             </li>
 
@@ -540,6 +559,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q6"></div>
               </div>
             </li>
 
@@ -559,6 +579,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q7"></div>
               </div>
             </li>
 
@@ -578,6 +599,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q8"></div>
               </div>
             </li>
 
@@ -597,6 +619,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q9"></div>
               </div>
             </li>
 
@@ -616,6 +639,7 @@
                   <option>Doing business in a way that meets current needs without harming the environment, society, or future generations.</option>
                   <option>A measure that compares the profit gained from an investment to the amount of money invested, usually expressed as a percentage.</option>
                 </select>
+                 <div class="definition-preview" data-for="q10"></div>
               </div>
             </li>
           </ol>
@@ -881,6 +905,28 @@
         sel.selectedIndex = 0;
       });
     }
+
+    function initDefinitionPreviews() {
+  document.querySelectorAll('#partA select').forEach(sel => {
+    const name = sel.name; // e.g. "q1"
+    const preview = document.querySelector(
+      `.definition-preview[data-for="${name}"]`
+    );
+    if (!preview) return;
+
+    const update = () => {
+      const opt = sel.options[sel.selectedIndex];
+      const text = opt ? opt.text : "";
+      preview.textContent = text || "";
+      // Full definition as tooltip on the select (desktop)
+      sel.title = text || "";
+    };
+
+    sel.addEventListener('change', update);
+    // Initial state
+    update();
+  });
+}
 
     // Randomise question order in Part A
     function randomizeQuestionOrder() {
@@ -1159,7 +1205,7 @@ if (langSentinel && langSentinelBaseline) {
     const s = totalSec % 60;
 
     if (timerDisplay) {
-      timerDisplay.textContent = `Time Remaining: ${m}:${s
+      timerDisplay.textContent = `Temps restant : ${m}:${s
         .toString()
         .padStart(2, "0")}`;
 
