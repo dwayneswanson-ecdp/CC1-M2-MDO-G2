@@ -62,18 +62,19 @@
       color: #2643e9; /* same blue accent as the new page */
     }
 
-    /* Timer on the right */
-    #timer {
-      font-weight: 600;
-      font-size: 0.9rem;
-      text-align: right;
-      color: #111827;
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid #d1d5db;
-      background: #f9fafb;
-      white-space: nowrap;
-    }
+ /* Timer on the right */
+#timer {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: right;
+  color: #111827;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #4b5563;   /* darker border for more contrast */
+  background: #ffffff;          /* solid white pill on slightly darker header */
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
 
     /* Main exam wrapper */
     main {
@@ -1147,22 +1148,40 @@ if (langSentinel && langSentinelBaseline) {
         console.log("✅ Landing screen forced.");
       }
 
-      function startTimer() {
-        clearInterval(timer);
-        timer = setInterval(() => {
-          if (!examDeadline) return;
-          const now = Date.now();
-          const remainingMs = examDeadline - now;
-          const totalSec = Math.max(0, Math.floor(remainingMs / 1000));
-          const m = Math.floor(totalSec / 60);
-          const s = totalSec % 60;
-          timerDisplay.textContent = `Time Remaining: ${m}:${s.toString().padStart(2, "0")}`;
-          if (remainingMs <= 0) {
-            clearInterval(timer);
-            submitExam("Time limit reached – exam auto-submitted.");
-          }
-        }, 1000);
+ function startTimer() {
+  clearInterval(timer);
+  timer = setInterval(() => {
+    if (!examDeadline) return;
+    const now = Date.now();
+    const remainingMs = examDeadline - now;
+    const totalSec = Math.max(0, Math.floor(remainingMs / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+
+    if (timerDisplay) {
+      timerDisplay.textContent = `Time Remaining: ${m}:${s
+        .toString()
+        .padStart(2, "0")}`;
+
+      // Neutral style above 5 minutes
+      if (totalSec > 5 * 60) {
+        timerDisplay.style.background = "#ffffff";
+        timerDisplay.style.color = "#111827";
+        timerDisplay.style.borderColor = "#4b5563";
+      } else {
+        // 🔴 Under 5 minutes: soft “urgent” style
+        timerDisplay.style.background = "#fee2e2"; // light red
+        timerDisplay.style.color = "#b91c1c";      // red text
+        timerDisplay.style.borderColor = "#b91c1c";
       }
+    }
+
+    if (remainingMs <= 0) {
+      clearInterval(timer);
+      submitExam("Time limit reached – exam auto-submitted.");
+    }
+  }, 1000);
+}
 
       function enableFullScreen() {
         if (document.documentElement.requestFullscreen) {
