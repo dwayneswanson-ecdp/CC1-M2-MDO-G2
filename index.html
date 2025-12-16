@@ -345,6 +345,10 @@
   </header>
 
   <main>
+    <span id="langSentinel" style="display:none;">
+  This reference sentence is used only to detect automatic translation of the exam page.
+</span>
+    
     <!-- LOGIN -->
     <section id="login" class="card">
       <h2>Commencer l'épreuve</h2>
@@ -888,6 +892,11 @@
 
       isMobile = /Mobi|Android/i.test(ua) || isIOSUA;
 
+      // Disable right-click everywhere on the page
+document.addEventListener("contextmenu", function (e) {
+  e.preventDefault();
+}, { capture: true });
+
       // Detect Safari (desktop & iOS) – block the exam on this browser
       const isSafari = /^((?!chrome|crios|fxios|android).)*safari/i.test(ua);
 
@@ -980,6 +989,33 @@
       const exitOverlayLeave = document.getElementById("exitOverlayLeave");
       const exitOverlayCountdownText = document.getElementById("exitOverlayCountdownText");
       const exitOverlayCountdownDigits = document.getElementById("exitOverlayCountdownDigits");
+
+      // Translation sentinel – detects if the page text was auto-translated
+const langSentinel = document.getElementById("langSentinel");
+const langSentinelBaseline = langSentinel
+  ? langSentinel.textContent.trim()
+  : null;
+
+if (langSentinel && langSentinelBaseline) {
+  setInterval(() => {
+    if (!examActive || examSubmitted) return;
+
+    const current = langSentinel.textContent.trim();
+    if (current !== langSentinelBaseline) {
+      // Page text has been modified (likely translation)
+      logEvent(
+        "Possible page translation detected",
+        `Sentinel changed from "${langSentinelBaseline}" to "${current}".`
+      );
+
+      askToExitExam(
+        "Une modification automatique de la langue de la page a été détectée. " +
+        "Merci de désactiver la traduction et de rester sur la version originale de l'épreuve.",
+        "translationWatch"
+      );
+    }
+  }, 2000); // check every 2 seconds
+}
 
       const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
 
