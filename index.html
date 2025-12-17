@@ -965,41 +965,43 @@ document.addEventListener("contextmenu", function (e) {
 }, { capture: true });
 
       // Detect Safari (desktop & iOS) – block the exam on this browser
-      const isSafari = /^((?!chrome|crios|fxios|android).)*safari/i.test(ua);
+const BLOCK_SAFARI = false; // ← set to true  if you want to reblock or false to unblock
 
-      if (isSafari) {
-        const main = document.querySelector("main");
-        if (main) {
-          main.innerHTML = `
-            <section class="card">
-              <h2 style="display:flex; align-items:center; gap:8px; margin-top:0;">
-                <span>⚠️</span>
-                <span>Navigateur non pris en charge</span>
-              </h2>
-              <p>
-                Pour des raisons techniques, cette épreuve en ligne n’est pas disponible sur
-                <strong>Safari</strong>.
-              </p>
-              <p>
-                Merci d’ouvrir ce lien dans l’un des navigateurs suivants&nbsp;:
-              </p>
-              <ul>
-                <li><strong>Google Chrome</strong></li>
-                <li><strong>Microsoft Edge</strong></li>
-                <li><strong>Mozilla Firefox</strong></li>
-              </ul>
-              <p class="muted">
-                Si vous voyez encore ce message alors que vous utilisez déjà l’un de ces navigateurs,
-                merci d’en informer immédiatement votre enseignant.
-              </p>
-            </section>
-          `;
-        }
+const isSafari = /^((?!chrome|crios|fxios|android).)*safari/i.test(ua);
 
-        const timerEl = document.getElementById("timer");
-        if (timerEl) timerEl.textContent = "";
-        return; // stop all further exam logic on Safari
-      }
+if (isSafari && BLOCK_SAFARI) {
+  const main = document.querySelector("main");
+  if (main) {
+    main.innerHTML = `
+      <section class="card">
+        <h2 style="display:flex; align-items:center; gap:8px; margin-top:0;">
+          <span>⚠️</span>
+          <span>Navigateur non pris en charge</span>
+        </h2>
+        <p>
+          Pour des raisons techniques, cette épreuve en ligne n’est pas disponible sur
+          <strong>Safari</strong>.
+        </p>
+        <p>
+          Merci d’ouvrir ce lien dans l’un des navigateurs suivants&nbsp;:
+        </p>
+        <ul>
+          <li><strong>Google Chrome</strong></li>
+          <li><strong>Microsoft Edge</strong></li>
+          <li><strong>Mozilla Firefox</strong></li>
+        </ul>
+        <p class="muted">
+          Si vous voyez encore ce message alors que vous utilisez déjà l’un de ces navigateurs,
+          merci d’en informer immédiatement votre enseignant.
+        </p>
+      </section>
+    `;
+  }
+
+  const timerEl = document.getElementById("timer");
+  if (timerEl) timerEl.textContent = "";
+  return;
+}
 
       // ----- EmailJS init -----
       if (window.emailjs) {
