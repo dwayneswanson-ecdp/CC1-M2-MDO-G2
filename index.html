@@ -63,16 +63,17 @@
       color: #2643e9; /* same blue accent as the new page */
     }
 
- /* Timer on the right */
+/* Timer on the right */
 #timer {
+  display: none;           /* 🔹 Hidden by default on landing/home */
   font-weight: 700;
   font-size: 1.05rem;
   text-align: right;
   padding: 8px 18px;
   border-radius: 999px;
   border: 1px solid #111827;
-  background: #111827;   /* dark pill */
-  color: #f9fafb;        /* light text */
+  background: #111827;     /* dark pill */
+  color: #f9fafb;          /* light text */
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
 }
@@ -1161,6 +1162,11 @@ if (langSentinel && langSentinelBaseline) {
           console.error("Error clearing timer in resetToLanding:", e);
         }
 
+          if (timerDisplay) {
+    timerDisplay.textContent = "";
+    timerDisplay.style.display = "none";   // 🔹 Hide on home/landing
+  }
+
         if (exitCountdownTimer) {
           clearInterval(exitCountdownTimer);
           exitCountdownTimer = null;
@@ -1573,6 +1579,9 @@ if (langSentinel && langSentinelBaseline) {
           console.log("⏱ Startup grace period over");
         }, 1200);
 
+        if (timerDisplay) {
+    timerDisplay.style.display = "inline-block";  // 🔹 Show when exam starts
+  }
         enableFullScreen();
 startTimer();
 randomizeQuestionOrder();
@@ -1779,6 +1788,30 @@ initDefinitionPreviews();   // 👈 add this line
               <tr><td style="padding:8px;border:1px solid #ccc;">Professional Style</td><td style="padding:8px;border:1px solid #ccc;">/2</td><td style="padding:8px;border:1px solid #ccc;">___ / 2</td></tr>
             </tbody>
           </table>
+                    <table style="border-collapse:collapse;width:100%;font-size:15px;margin-top:6px;">
+            <thead>
+              <tr style="background:#004080;color:#fff;text-align:left;">
+                <th style="padding:8px;border:1px solid #ccc;">Criterion</th>
+                <th style="padding:8px;border:1px solid #ccc;">Maximum</th>
+                <th style="padding:8px;border:1px solid #ccc;">Awarded</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:8px;border:1px solid #ccc;">Vocabulary Use</td><td style="padding:8px;border:1px solid #ccc;">/3</td><td style="padding:8px;border:1px solid #ccc;">___ / 3</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ccc;">Structure & Clarity</td><td style="padding:8px;border:1px solid #ccc;">/3</td><td style="padding:8px;border:1px solid #ccc;">___ / 3</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ccc;">Language Accuracy & Tone</td><td style="padding:8px;border:1px solid #ccc;">/2</td><td style="padding:8px;border:1px solid #ccc;">___ / 2</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ccc;">Professional Style</td><td style="padding:8px;border:1px solid #ccc;">/2</td><td style="padding:8px;border:1px solid #ccc;">___ / 2</td></tr>
+            </tbody>
+          </table>
+
+          <!-- ➜ Add this block -->
+          <h4 style="color:#004080;margin:12px 0 6px 0;">Instructor comments</h4>
+          <p style="border:1px solid #ccc;border-radius:6px;padding:10px;min-height:60px;font-size:14px;">
+            <!-- Write comments here when correcting the exam -->
+          </p>
+          <!-- end block -->
+
+          <p style="margin:12px 0 6px 0;"><b>Part B Score:</b> ${partBScore}</p>
           <p style="margin:12px 0 6px 0;"><b>Part B Score:</b> ${partBScore}</p>
 
           <hr style="border:none;border-top:1px solid #ddd;margin:16px 0;">
